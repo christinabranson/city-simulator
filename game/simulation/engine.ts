@@ -15,15 +15,57 @@ const cloneSnapshot = (snapshot: GameStateSnapshot): GameStateSnapshot => ({
   ...snapshot,
   resources: { ...snapshot.resources },
   tiles: snapshot.tiles.map((tile) => ({ ...tile })),
-  gifts: [...snapshot.gifts]
+  gifts: [...snapshot.gifts],
+  cityMetrics: { ...snapshot.cityMetrics }
 });
 
-export const runSimulation = (
-  snapshot: GameStateSnapshot,
+const clamp = (value: number, min: number, max: number): number =>
+  Math.max(min, Math.min(max, value));
+
+const getNeighbors = (tile: Tile, indexByCoordinate: Map<string, number>): number[] => {
+  const offsets: Array<[number, number]> = [
+    [0, -1],
+    [1, 0],
+    [0, 1],
+    [-1, 0]
+  ];
+  const neighbors: number[] = [];
+  for (const [dx, dy] of offsets) {
+    const idx = indexByCoordinate.get(`${tile.x + dx},${tile.y + dy}`);
+    if (idx !== undefined) {
+      neighbors.push(idx);
+    }
+  }
+  return neighbors;
+};
+
+const getNearbyCategoryCount = (
+  tiles: Tile[],
+  center: Tile,
+  category: "industrial" | "civic" | "recreation"
+): number => {
+  let count = 0;
+  for (const tile of tiles) {
+    if (!tile.constructed || !tile.buildingId) {
+      continue;
+    }
+    const definition = BUILDINGS[tile.buildingId];
+    if (definition.category !== category) {
+      continue;
+    }
+    const distance = Math.abs(tile.x - center.x) + Math.abs(tile.y - center.y);
+    if (distance > 0 && distance <= 2) {
+      count += 1;
+    }
+  }
+  return count;
+};
+
+const processConstructionAndProduction = (
+  next: GameStateSnapshot,
   now: number,
   hooks?: SimulationHooks
-): SimulationResult => {
-  const next = cloneSnapshot(snapshot);
+): Partial<Record<string, number>> => {
   const producedTotals: Partial<Record<string, number>> = {};
 
   for (const tile of next.tiles) {
@@ -52,12 +94,144 @@ export const runSimulation = (
 
     const producedAmount = completedCycles * definition.production.amountPerCycle;
     const resource = definition.production.resource;
-
     next.resources[resource] += producedAmount;
     tile.lastProducedAt = lastProduced + completedCycles * cycleMs;
     producedTotals[resource] = (producedTotals[resource] ?? 0) + producedAmount;
     hooks?.onResourceProduced?.(resource, producedAmount);
   }
+
+  return producedTotals;
+};
+
+const spreadPollution = (next: GameStateSnapshot, elapsedMinutes: number): void => {
+  if (elapsedMinutes <= 0) {
+    return;
+  }
+
+  const indexByCoordinate = new Map<string, number>();
+  next.tiles.forEach((tile, index) => {
+    indexByCoordinate.set(`${tile.x},${tile.y}`, index);
+  });
+
+  for (const tile of next.tiles) {
+    if (!tile.constructed || !tile.buildingId) {
+      continue;
+    }
+    const pollutionGenerated = BUILDINGS[tile.buildingId].pollution ?? 0;
+    if (pollutionGenerated > 0) {
+      tile.pollution += pollutionGenerated * elapsedMinutes;
+    }
+  }
+
+  const spreadRatio = Math.min(0.2 * elapsedMinutes, 0.8);
+  const deltas = new Array<number>(next.tiles.length).fill(0);
+
+  for (let index = 0; index < next.tiles.length; index += 1) {
+    const tile = next.tiles[index];
+    if (tile.pollution <= 0 || spreadRatio <= 0) {
+      continue;
+    }
+    const neighbors = getNeighbors(tile, indexByCoordinate);
+    if (neighbors.length === 0) {
+      continue;
+    }
+    const spreadAmount = tile.pollution * spreadRatio;
+    deltas[index] -= spreadAmount;
+    const eachNeighbor = spreadAmount / neighbors.length;
+    for (const neighbor of neighbors) {
+      deltas[neighbor] += eachNeighbor;
+    }
+  }
+
+  for (let index = 0; index < next.tiles.length; index += 1) {
+    next.tiles[index].pollution = Math.max(0, next.tiles[index].pollution + deltas[index]);
+  }
+
+  const decayFactor = Math.pow(0.95, elapsedMinutes);
+  for (const tile of next.tiles) {
+    tile.pollution = Math.max(0, tile.pollution * decayFactor);
+  }
+};
+
+const calculatePopulationAndJobs = (
+  next: GameStateSnapshot
+): { population: number; jobs: number; unemploymentRate: number } => {
+  let population = 0;
+  let jobs = 0;
+  for (const tile of next.tiles) {
+    if (!tile.constructed || !tile.buildingId) {
+      continue;
+    }
+    const definition = BUILDINGS[tile.buildingId];
+    population += definition.population ?? 0;
+    jobs += definition.jobs ?? 0;
+  }
+  const unemploymentRate = population > 0 ? Math.max(0, population - jobs) / population : 0;
+  return { population, jobs, unemploymentRate };
+};
+
+const calculateLandValueAndHappiness = (
+  next: GameStateSnapshot,
+  unemploymentRate: number
+): void => {
+  for (const tile of next.tiles) {
+    const nearbyRecreation = getNearbyCategoryCount(next.tiles, tile, "recreation");
+    const nearbyCivic = getNearbyCategoryCount(next.tiles, tile, "civic");
+    const nearbyIndustrial = getNearbyCategoryCount(next.tiles, tile, "industrial");
+    const building = tile.buildingId ? BUILDINGS[tile.buildingId] : null;
+
+    const landValueRaw =
+      50 +
+      nearbyRecreation * 6 +
+      nearbyCivic * 4 +
+      (building?.landValueBonus ?? 0) -
+      nearbyIndustrial * 5 -
+      tile.pollution * 0.6;
+    tile.landValue = clamp(landValueRaw, 0, 100);
+
+    let happinessRaw =
+      55 +
+      nearbyRecreation * 7 +
+      nearbyCivic * 6 +
+      tile.landValue * 0.2 -
+      nearbyIndustrial * 4 -
+      tile.pollution * 1.1;
+    if (building?.category === "residential") {
+      happinessRaw -= unemploymentRate * 25;
+    }
+    tile.happiness = clamp(happinessRaw, 0, 100);
+  }
+};
+
+const collectTaxes = (next: GameStateSnapshot, population: number, jobs: number, elapsedMinutes: number): void => {
+  const employedCitizens = Math.min(population, jobs);
+  const taxIncome = Math.floor(employedCitizens * 0.05 * elapsedMinutes);
+  if (taxIncome > 0) {
+    next.resources.coins += taxIncome;
+  }
+};
+
+export const runSimulation = (
+  snapshot: GameStateSnapshot,
+  now: number,
+  hooks?: SimulationHooks
+): SimulationResult => {
+  const next = cloneSnapshot(snapshot);
+  const elapsedMinutes = Math.max(0, (now - next.lastSimulatedAt) / 60_000);
+  const producedTotals = processConstructionAndProduction(next, now, hooks);
+  const { population, jobs, unemploymentRate } = calculatePopulationAndJobs(next);
+  spreadPollution(next, elapsedMinutes);
+  calculateLandValueAndHappiness(next, unemploymentRate);
+  collectTaxes(next, population, jobs, elapsedMinutes);
+  next.cityMetrics = {
+    population,
+    jobs,
+    unemploymentRate,
+    averageHappiness:
+      next.tiles.length > 0
+        ? Math.round(next.tiles.reduce((sum, tile) => sum + tile.happiness, 0) / next.tiles.length)
+        : 0
+  };
 
   next.lastSimulatedAt = now;
   return { snapshot: next, producedTotals };

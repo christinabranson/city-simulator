@@ -1,10 +1,19 @@
 export type ResourceType = "coins" | "energy";
+export type BuildingCategory =
+  | "residential"
+  | "commercial"
+  | "industrial"
+  | "civic"
+  | "recreation";
+
 export type BuildingId =
   | "house"
-  | "solarFarm"
   | "shop"
-  | "warehouse"
-  | "park";
+  | "factory"
+  | "school"
+  | "park"
+  | "solarFarm"
+  | "warehouse";
 
 export type Resources = Record<ResourceType, number>;
 
@@ -13,10 +22,15 @@ export type Cost = Partial<Resources>;
 export interface BuildingDefinition {
   id: BuildingId;
   name: string;
+  category: BuildingCategory;
   emoji: string;
   colorClass: string;
   constructionSeconds: number;
   cost: Cost;
+  population?: number;
+  jobs?: number;
+  pollution?: number;
+  landValueBonus?: number;
   production: {
     resource: ResourceType;
     amountPerCycle: number;
@@ -32,6 +46,9 @@ export interface Tile {
   constructionStartedAt: number | null;
   constructionCompleteAt: number | null;
   lastProducedAt: number | null;
+  pollution: number;
+  landValue: number;
+  happiness: number;
 }
 
 export interface GiftLogEntry {
@@ -48,6 +65,12 @@ export interface GameStateSnapshot {
   tiles: Tile[];
   lastSimulatedAt: number;
   gifts: GiftLogEntry[];
+  cityMetrics: {
+    population: number;
+    jobs: number;
+    unemploymentRate: number;
+    averageHappiness: number;
+  };
 }
 
 export interface ConstructionQueueItem {

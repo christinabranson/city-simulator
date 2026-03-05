@@ -19,7 +19,10 @@ const makeTiles = (width: number, height: number): Tile[] => {
         constructed: false,
         constructionStartedAt: null,
         constructionCompleteAt: null,
-        lastProducedAt: null
+        lastProducedAt: null,
+        pollution: 0,
+        landValue: 50,
+        happiness: 60
       });
     }
   }
@@ -54,7 +57,7 @@ export const MOCK_CITIES: MockCity[] = [
       if (tile.x === 3 && tile.y === 3) {
         return {
           ...tile,
-          buildingId: "solarFarm",
+          buildingId: "factory",
           constructed: true,
           lastProducedAt: Date.now()
         };

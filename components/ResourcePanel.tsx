@@ -30,6 +30,7 @@ export const ResourcePanel = () => {
   const tiles = useGameStore((state) => state.tiles);
   const lastSimulatedAt = useGameStore((state) => state.lastSimulatedAt);
   const nextAutoSimAt = useGameStore((state) => state.nextAutoSimAt);
+  const cityMetrics = useGameStore((state) => state.cityMetrics);
   const simulateNow = useGameStore((state) => state.simulateNow);
   const [now, setNow] = useState(() => Date.now());
 
@@ -83,6 +84,10 @@ export const ResourcePanel = () => {
             </div>
           </div>
         ))}
+      </div>
+      <div className="mt-3 rounded bg-slate-800 p-2 text-xs text-slate-200">
+        Population: {cityMetrics.population} | Jobs: {cityMetrics.jobs} | Unemployment:{" "}
+        {(cityMetrics.unemploymentRate * 100).toFixed(0)}% | Avg Happiness: {cityMetrics.averageHappiness}
       </div>
     </section>
   );

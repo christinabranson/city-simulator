@@ -5,6 +5,7 @@ import { CityGrid } from "@/components/CityGrid";
 import { ConstructionQueuePanel } from "@/components/ConstructionQueuePanel";
 import { ResourcePanel } from "@/components/ResourcePanel";
 import { SocialPanel } from "@/components/SocialPanel";
+import { TileInspectorModal } from "@/components/TileInspectorModal";
 import { useHydratedGame } from "@/hooks/useHydratedGame";
 import { useGameStore } from "@/game/state/useGameStore";
 
@@ -36,6 +37,7 @@ export default function Home() {
             </div>
           </div>
         )}
+        <TileInspectorModal />
       </main>
     </>
   );
