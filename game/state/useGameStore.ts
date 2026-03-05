@@ -1,6 +1,8 @@
 import { create } from "zustand";
 
 import { BUILDINGS } from "@/game/models/buildings";
+import { getScaledCost } from "@/game/models/costs";
+import { MOVE_COST_RATIO } from "@/game/models/economy";
 import { MOCK_CITIES } from "@/game/models/mockCities";
 import { loadSnapshot, saveSnapshot } from "@/game/persistence/localStorage";
 import { runSimulation } from "@/game/simulation/engine";
@@ -11,6 +13,7 @@ import type {
   GiftLogEntry,
   LandValueTier,
   ResourceType,
+  RoadType,
   Tile
 } from "@/types/game";
 
@@ -27,7 +30,10 @@ const createDefaultTile = (x: number, y: number): Tile => ({
   x,
   y,
   buildingId: null,
+  roadType: "none",
   constructed: false,
+  isActive: true,
+  inactiveReason: null,
   constructionStartedAt: null,
   constructionCompleteAt: null,
   lastProducedAt: null,
@@ -92,6 +98,9 @@ const normalizeSnapshot = (
       ...baseTile,
       ...maybeLoadedTile,
       buildingId: hasValidBuilding ? maybeLoadedTile.buildingId : null,
+      roadType: maybeLoadedTile.roadType ?? "none",
+      isActive: maybeLoadedTile.isActive ?? true,
+      inactiveReason: maybeLoadedTile.inactiveReason ?? null,
       pollution: maybeLoadedTile.pollution ?? 0,
       landValue: maybeLoadedTile.landValue ?? 50,
       happiness: maybeLoadedTile.happiness ?? 60
@@ -165,16 +174,24 @@ const persist = (snapshot: GameStateSnapshot): void => {
 
 interface UiState {
   selectedBuildingId: BuildingId | null;
+  selectedRoadType: RoadType | null;
   hydrated: boolean;
   activeNeighborCityId: string | null;
   nextAutoSimAt: number | null;
   inspectedTile: { x: number; y: number } | null;
+  movingBuilding: { fromX: number; fromY: number; buildingId: BuildingId; moveCost: Cost } | null;
 }
 
 interface GameActions {
   hydrateFromStorage: () => void;
   selectBuilding: (buildingId: BuildingId | null) => void;
+  selectRoadTool: (roadType: Exclude<RoadType, "none"> | null) => void;
   placeBuilding: (x: number, y: number) => void;
+  toggleRoad: (x: number, y: number) => void;
+  beginMoveTile: (x: number, y: number) => void;
+  placeMovedBuilding: (x: number, y: number) => void;
+  cancelMove: () => void;
+  bulldozeTile: (x: number, y: number) => void;
   upgradeTile: (x: number, y: number) => void;
   inspectTile: (x: number, y: number) => void;
   closeTileInspector: () => void;
@@ -189,10 +206,12 @@ type GameStore = GameStateSnapshot & UiState & GameActions;
 export const useGameStore = create<GameStore>((set, get) => ({
   ...createInitialSnapshot(),
   selectedBuildingId: null,
+  selectedRoadType: null,
   hydrated: false,
   activeNeighborCityId: null,
   nextAutoSimAt: null,
   inspectedTile: null,
+  movingBuilding: null,
 
   hydrateFromStorage: () => {
     if (get().hydrated) {
@@ -208,7 +227,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   selectBuilding: (buildingId) => {
-    set({ selectedBuildingId: buildingId });
+    set({ selectedBuildingId: buildingId, selectedRoadType: null, movingBuilding: null });
+  },
+
+  selectRoadTool: (roadType) => {
+    set({ selectedRoadType: roadType, selectedBuildingId: null, inspectedTile: null, movingBuilding: null });
   },
 
   placeBuilding: (x, y) => {
@@ -220,7 +243,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const current = runSimulation(snapshotFromState(state), Date.now()).snapshot;
 
     const targetTile = current.tiles.find((tile) => tile.x === x && tile.y === y);
-    if (!targetTile || targetTile.buildingId) {
+    if (!targetTile || targetTile.buildingId || targetTile.roadType !== "none") {
       set({ ...current });
       persist(current);
       return;
@@ -241,7 +264,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
         ? {
             ...tile,
             buildingId,
+            roadType: "none" as const,
             constructed: false,
+            isActive: true,
+            inactiveReason: null,
             constructionStartedAt: now,
             constructionCompleteAt: now + definition.constructionSeconds * 1000,
             lastProducedAt: null
@@ -259,6 +285,174 @@ export const useGameStore = create<GameStore>((set, get) => ({
       ...nextSnapshot
     });
     persist(nextSnapshot);
+  },
+
+  toggleRoad: (x, y) => {
+    const state = get();
+    if (!state.selectedRoadType) {
+      return;
+    }
+    const now = Date.now();
+    const current = runSimulation(snapshotFromState(state), now).snapshot;
+    const tile = current.tiles.find((candidate) => candidate.x === x && candidate.y === y);
+    if (!tile || tile.buildingId) {
+      set({ ...current });
+      persist(current);
+      return;
+    }
+
+    const nextRoadType = tile.roadType === "none" ? state.selectedRoadType : "none";
+    const updatedSnapshot: GameStateSnapshot = {
+      ...current,
+      tiles: current.tiles.map((candidate) =>
+        candidate.x === x && candidate.y === y
+          ? {
+              ...candidate,
+              roadType: nextRoadType
+            }
+          : candidate
+      ),
+      lastSimulatedAt: now
+    };
+
+    const simulated = runSimulation(updatedSnapshot, now).snapshot;
+    set({ ...simulated });
+    persist(simulated);
+  },
+
+  beginMoveTile: (x, y) => {
+    const state = get();
+    const current = runSimulation(snapshotFromState(state), Date.now()).snapshot;
+    const tile = current.tiles.find((candidate) => candidate.x === x && candidate.y === y);
+    if (!tile || !tile.constructed || !tile.buildingId) {
+      set({ ...current, movingBuilding: null });
+      persist(current);
+      return;
+    }
+
+    const definition = BUILDINGS[tile.buildingId];
+    const moveCost = getScaledCost(definition.cost, MOVE_COST_RATIO);
+    set({
+      ...current,
+      selectedBuildingId: null,
+      selectedRoadType: null,
+      inspectedTile: null,
+      movingBuilding: {
+        fromX: x,
+        fromY: y,
+        buildingId: tile.buildingId,
+        moveCost
+      }
+    });
+    persist(current);
+  },
+
+  placeMovedBuilding: (x, y) => {
+    const state = get();
+    if (!state.movingBuilding) {
+      return;
+    }
+    const { fromX, fromY, buildingId, moveCost } = state.movingBuilding;
+    const now = Date.now();
+    const current = runSimulation(snapshotFromState(state), now).snapshot;
+    const sourceTile = current.tiles.find((candidate) => candidate.x === fromX && candidate.y === fromY);
+    const destinationTile = current.tiles.find((candidate) => candidate.x === x && candidate.y === y);
+
+    if (
+      !sourceTile ||
+      !destinationTile ||
+      (x === fromX && y === fromY) ||
+      sourceTile.buildingId !== buildingId ||
+      !destinationTile ||
+      destinationTile.buildingId ||
+      destinationTile.roadType !== "none" ||
+      !canAffordCost(current, moveCost)
+    ) {
+      set({ ...current });
+      persist(current);
+      return;
+    }
+
+    const movedLastProducedAt = sourceTile.lastProducedAt;
+    const afterCost = deductCost(current, moveCost);
+    const movedSnapshot: GameStateSnapshot = {
+      ...afterCost,
+      tiles: afterCost.tiles.map((candidate) => {
+        if (candidate.x === fromX && candidate.y === fromY) {
+          return {
+            ...candidate,
+            buildingId: null,
+            constructed: false,
+            isActive: true,
+            inactiveReason: null,
+            constructionStartedAt: null,
+            constructionCompleteAt: null,
+            lastProducedAt: null
+          };
+        }
+        if (candidate.x === x && candidate.y === y) {
+          return {
+            ...candidate,
+            buildingId,
+            constructed: true,
+            isActive: true,
+            inactiveReason: null,
+            constructionStartedAt: null,
+            constructionCompleteAt: null,
+            lastProducedAt: movedLastProducedAt
+          };
+        }
+        return candidate;
+      }),
+      lastSimulatedAt: now
+    };
+
+    const simulated = runSimulation(movedSnapshot, now).snapshot;
+    set({
+      ...simulated,
+      movingBuilding: null,
+      inspectedTile: { x, y }
+    });
+    persist(simulated);
+  },
+
+  cancelMove: () => {
+    set({ movingBuilding: null });
+  },
+
+  bulldozeTile: (x, y) => {
+    const state = get();
+    const now = Date.now();
+    const current = runSimulation(snapshotFromState(state), now).snapshot;
+    const tile = current.tiles.find((candidate) => candidate.x === x && candidate.y === y);
+    if (!tile || !tile.buildingId) {
+      set({ ...current });
+      persist(current);
+      return;
+    }
+
+    const bulldozedSnapshot: GameStateSnapshot = {
+      ...current,
+      tiles: current.tiles.map((candidate) =>
+        candidate.x === x && candidate.y === y
+          ? {
+              ...candidate,
+              buildingId: null,
+              constructed: false,
+              isActive: true,
+              inactiveReason: null,
+              constructionStartedAt: null,
+              constructionCompleteAt: null,
+              lastProducedAt: null
+            }
+          : candidate
+      ),
+      lastSimulatedAt: now
+    };
+
+    const simulated = runSimulation(bulldozedSnapshot, now).snapshot;
+    set({ ...simulated, inspectedTile: { x, y } });
+    persist(simulated);
   },
 
   upgradeTile: (x, y) => {

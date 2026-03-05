@@ -40,6 +40,11 @@ const getNeighbors = (tile: Tile, indexByCoordinate: Map<string, number>): numbe
   return neighbors;
 };
 
+const hasAdjacentRoad = (tile: Tile, tiles: Tile[], indexByCoordinate: Map<string, number>): boolean => {
+  const neighbors = getNeighbors(tile, indexByCoordinate);
+  return neighbors.some((neighborIndex) => tiles[neighborIndex].roadType !== "none");
+};
+
 const getNearbyCategoryCount = (
   tiles: Tile[],
   center: Tile,
@@ -47,7 +52,7 @@ const getNearbyCategoryCount = (
 ): number => {
   let count = 0;
   for (const tile of tiles) {
-    if (!tile.constructed || !tile.buildingId) {
+    if (!tile.constructed || !tile.buildingId || !tile.isActive) {
       continue;
     }
     const definition = BUILDINGS[tile.buildingId];
@@ -68,9 +73,15 @@ const processConstructionAndProduction = (
   hooks?: SimulationHooks
 ): Partial<Record<string, number>> => {
   const producedTotals: Partial<Record<string, number>> = {};
+  const indexByCoordinate = new Map<string, number>();
+  next.tiles.forEach((tile, index) => {
+    indexByCoordinate.set(`${tile.x},${tile.y}`, index);
+  });
 
   for (const tile of next.tiles) {
     if (!tile.buildingId) {
+      tile.isActive = true;
+      tile.inactiveReason = null;
       continue;
     }
     const definition = BUILDINGS[tile.buildingId];
@@ -81,8 +92,17 @@ const processConstructionAndProduction = (
         tile.lastProducedAt = tile.constructionCompleteAt;
         hooks?.onBuildingConstructionComplete?.(tile);
       } else {
+        tile.isActive = false;
+        tile.inactiveReason = "Under construction";
         continue;
       }
+    }
+
+    const connectedToRoad = hasAdjacentRoad(tile, next.tiles, indexByCoordinate);
+    tile.isActive = connectedToRoad;
+    tile.inactiveReason = connectedToRoad ? null : "No road access";
+    if (!connectedToRoad) {
+      continue;
     }
 
     const lastProduced = tile.lastProducedAt ?? next.lastSimulatedAt;
@@ -115,7 +135,7 @@ const spreadPollution = (next: GameStateSnapshot, elapsedMinutes: number): void 
   });
 
   for (const tile of next.tiles) {
-    if (!tile.constructed || !tile.buildingId) {
+    if (!tile.constructed || !tile.buildingId || !tile.isActive) {
       continue;
     }
     const pollutionGenerated = BUILDINGS[tile.buildingId].pollution ?? 0;
@@ -168,7 +188,7 @@ const calculatePopulationAndJobs = (
   let commercialJobs = 0;
   let industrialJobs = 0;
   for (const tile of next.tiles) {
-    if (!tile.constructed || !tile.buildingId) {
+    if (!tile.constructed || !tile.buildingId || !tile.isActive) {
       continue;
     }
     const definition = BUILDINGS[tile.buildingId];
@@ -209,7 +229,7 @@ const calculateLandValueAndHappiness = (
     const nearbyRecreation = getNearbyCategoryCount(next.tiles, tile, "recreation");
     const nearbyCivic = getNearbyCategoryCount(next.tiles, tile, "civic");
     const nearbyIndustrial = getNearbyCategoryCount(next.tiles, tile, "industrial");
-    const building = tile.buildingId ? BUILDINGS[tile.buildingId] : null;
+    const building = tile.buildingId && tile.isActive ? BUILDINGS[tile.buildingId] : null;
 
     const landValueRaw =
       50 +

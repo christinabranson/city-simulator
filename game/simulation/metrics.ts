@@ -20,7 +20,7 @@ export const getResourceCycleStats = (
   const stats = emptyStats();
 
   for (const tile of snapshot.tiles) {
-    if (!tile.buildingId || !tile.constructed) {
+    if (!tile.buildingId || !tile.constructed || !tile.isActive) {
       continue;
     }
 

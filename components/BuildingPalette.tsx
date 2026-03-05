@@ -3,7 +3,9 @@ import { useGameStore } from "@/game/state/useGameStore";
 
 export const BuildingPalette = () => {
   const selectedBuildingId = useGameStore((state) => state.selectedBuildingId);
+  const selectedRoadType = useGameStore((state) => state.selectedRoadType);
   const selectBuilding = useGameStore((state) => state.selectBuilding);
+  const selectRoadTool = useGameStore((state) => state.selectRoadTool);
   const resources = useGameStore((state) => state.resources);
 
   return (
@@ -12,14 +14,28 @@ export const BuildingPalette = () => {
       <div className="space-y-2">
         <button
           type="button"
-          onClick={() => selectBuilding(null)}
+          onClick={() => {
+            selectBuilding(null);
+            selectRoadTool(null);
+          }}
           className={`w-full rounded border px-3 py-2 text-left text-sm ${
-            selectedBuildingId === null
+            selectedBuildingId === null && selectedRoadType === null
               ? "border-sky-500 bg-sky-900/30"
               : "border-slate-700 bg-slate-800 hover:bg-slate-700"
           }`}
         >
           Cursor only
+        </button>
+        <button
+          type="button"
+          onClick={() => selectRoadTool("road")}
+          className={`w-full rounded border px-3 py-2 text-left text-sm ${
+            selectedRoadType === "road"
+              ? "border-sky-500 bg-sky-900/30"
+              : "border-slate-700 bg-slate-800 hover:bg-slate-700"
+          }`}
+        >
+          🛣️ Road tool
         </button>
         {BUILDING_LIST.map((building) => {
           const affordable = Object.entries(building.cost).every(

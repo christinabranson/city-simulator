@@ -1,6 +1,7 @@
 export type ResourceType = "coins" | "energy";
 export type DemandType = "residential" | "commercial" | "industrial";
 export type LandValueTier = "slum" | "basic" | "suburban" | "highValue";
+export type RoadType = "none" | "road" | "heavyRoad" | "highway";
 export type BuildingCategory =
   | "residential"
   | "commercial"
@@ -52,7 +53,10 @@ export interface Tile {
   x: number;
   y: number;
   buildingId: BuildingId | null;
+  roadType: RoadType;
   constructed: boolean;
+  isActive: boolean;
+  inactiveReason: string | null;
   constructionStartedAt: number | null;
   constructionCompleteAt: number | null;
   lastProducedAt: number | null;
