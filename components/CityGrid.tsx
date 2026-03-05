@@ -115,16 +115,23 @@ export const CityGrid = () => {
 
   const getBuildPreview = (
     tile: (typeof tiles)[number]
-  ): { canPlace: boolean } | null => {
+  ): { canPlace: boolean; reason: string | null } | null => {
     if (!selectedBuildingId || selectedRoadType || movingBuilding) {
       return null;
     }
-    const canPlace =
-      tile.buildingId === null &&
-      tile.roadType === "none" &&
-      hasAdjacentRoad(tile.x, tile.y) &&
-      canAffordSelectedBuilding;
-    return { canPlace };
+    if (tile.buildingId !== null) {
+      return { canPlace: false, reason: "Blocked: tile already has a building." };
+    }
+    if (tile.roadType !== "none") {
+      return { canPlace: false, reason: "Blocked: remove road first." };
+    }
+    if (!hasAdjacentRoad(tile.x, tile.y)) {
+      return { canPlace: false, reason: "Blocked: requires adjacent road." };
+    }
+    if (!canAffordSelectedBuilding) {
+      return { canPlace: false, reason: "Blocked: insufficient resources." };
+    }
+    return { canPlace: true, reason: "Valid placement." };
   };
 
   const getServiceOverlayOpacity = (tile: (typeof tiles)[number]): { education: number; recreation: number } => {
@@ -248,6 +255,7 @@ export const CityGrid = () => {
                   className={`relative aspect-square rounded border border-slate-700 text-xs text-slate-100 ${
                     buildPreview ? (buildPreview.canPlace ? "cursor-copy" : "cursor-not-allowed") : ""
                   } ${style.className}`}
+                  title={buildPreview?.reason ?? undefined}
                 >
                   <span
                     className="pointer-events-none absolute inset-0 rounded"
@@ -297,6 +305,7 @@ export const CityGrid = () => {
                 className={`relative aspect-square rounded border border-slate-700 bg-slate-800 text-xs text-slate-300 hover:bg-slate-700 ${
                   buildPreview ? (buildPreview.canPlace ? "cursor-copy" : "cursor-not-allowed") : ""
                 }`}
+                title={buildPreview?.reason ?? undefined}
               >
                 <span
                   className="pointer-events-none absolute inset-0 rounded"
@@ -356,6 +365,7 @@ export const CityGrid = () => {
                 className={`relative aspect-square rounded border border-slate-700 text-center text-xs ${
                   buildPreview ? "cursor-not-allowed" : ""
                 } ${building.colorClass}`}
+                title={buildPreview?.reason ?? undefined}
             >
                 <span
                   className="pointer-events-none absolute inset-0 rounded"
