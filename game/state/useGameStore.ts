@@ -74,6 +74,7 @@ interface UiState {
   selectedBuildingId: BuildingId | null;
   hydrated: boolean;
   activeNeighborCityId: string | null;
+  nextAutoSimAt: number | null;
 }
 
 interface GameActions {
@@ -81,6 +82,7 @@ interface GameActions {
   selectBuilding: (buildingId: BuildingId | null) => void;
   placeBuilding: (x: number, y: number) => void;
   simulateNow: () => void;
+  setNextAutoSimAt: (timestamp: number | null) => void;
   giftResource: (resource: ResourceType, amount: number) => void;
   visitNeighborCity: (cityId: string) => void;
 }
@@ -92,6 +94,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   selectedBuildingId: null,
   hydrated: false,
   activeNeighborCityId: null,
+  nextAutoSimAt: null,
 
   hydrateFromStorage: () => {
     if (get().hydrated) {
@@ -188,6 +191,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
       ...simulated
     });
     persist(simulated);
+  },
+
+  setNextAutoSimAt: (timestamp) => {
+    set({ nextAutoSimAt: timestamp });
   },
 
   giftResource: (resource, amount) => {
