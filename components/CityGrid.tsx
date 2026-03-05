@@ -18,7 +18,14 @@ const roadStyle = (roadType: "road" | "heavyRoad" | "highway"): { className: str
   return { className: "bg-slate-600 hover:bg-slate-500", icon: "🛣️" };
 };
 
-type ServiceOverlayMode = "none" | "education" | "recreation" | "combined";
+type OverlayMode =
+  | "none"
+  | "landValue"
+  | "pollution"
+  | "happiness"
+  | "serviceEducation"
+  | "serviceRecreation"
+  | "serviceCombined";
 
 export const CityGrid = () => {
   const tiles = useGameStore((state) => state.tiles);
@@ -31,23 +38,37 @@ export const CityGrid = () => {
   const placeMovedBuilding = useGameStore((state) => state.placeMovedBuilding);
   const toggleRoad = useGameStore((state) => state.toggleRoad);
   const inspectTile = useGameStore((state) => state.inspectTile);
-  const [serviceOverlayMode, setServiceOverlayMode] = useState<ServiceOverlayMode>("none");
+  const [overlayMode, setOverlayMode] = useState<OverlayMode>("none");
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key.toLowerCase() !== "s") {
+      const key = event.key.toLowerCase();
+      if (!["l", "p", "h", "s"].includes(key)) {
         return;
       }
       event.preventDefault();
-      setServiceOverlayMode((previous) => {
-        if (previous === "none") {
-          return "education";
+      setOverlayMode((previous) => {
+        if (key === "l") {
+          return previous === "landValue" ? "none" : "landValue";
         }
-        if (previous === "education") {
-          return "recreation";
+        if (key === "p") {
+          return previous === "pollution" ? "none" : "pollution";
         }
-        if (previous === "recreation") {
-          return "combined";
+        if (key === "h") {
+          return previous === "happiness" ? "none" : "happiness";
+        }
+        if (
+          previous !== "serviceEducation" &&
+          previous !== "serviceRecreation" &&
+          previous !== "serviceCombined"
+        ) {
+          return "serviceEducation";
+        }
+        if (previous === "serviceEducation") {
+          return "serviceRecreation";
+        }
+        if (previous === "serviceRecreation") {
+          return "serviceCombined";
         }
         return "none";
       });
@@ -107,19 +128,44 @@ export const CityGrid = () => {
   };
 
   const getServiceOverlayOpacity = (tile: (typeof tiles)[number]): { education: number; recreation: number } => {
-    if (serviceOverlayMode === "none") {
-      return { education: 0, recreation: 0 };
-    }
-    if (serviceOverlayMode === "education") {
+    if (overlayMode === "serviceEducation") {
       return { education: tile.serviceCoverage.education ? 0.78 : 0, recreation: 0 };
     }
-    if (serviceOverlayMode === "recreation") {
+    if (overlayMode === "serviceRecreation") {
       return { education: 0, recreation: tile.serviceCoverage.recreation ? 0.78 : 0 };
     }
-    return {
-      education: tile.serviceCoverage.education ? 0.58 : 0,
-      recreation: tile.serviceCoverage.recreation ? 0.58 : 0
-    };
+    if (overlayMode === "serviceCombined") {
+      return {
+        education: tile.serviceCoverage.education ? 0.58 : 0,
+        recreation: tile.serviceCoverage.recreation ? 0.58 : 0
+      };
+    }
+    return { education: 0, recreation: 0 };
+  };
+
+  const getSingleOverlayStyle = (tile: (typeof tiles)[number]): { background: string; opacity: number } | null => {
+    if (overlayMode === "landValue") {
+      const hue = Math.round((tile.landValue / 100) * 120);
+      return {
+        background: `linear-gradient(135deg, hsla(${hue}, 85%, 55%, 0.95), hsla(${hue}, 85%, 35%, 0.9))`,
+        opacity: 0.78
+      };
+    }
+    if (overlayMode === "pollution") {
+      const intensity = Math.max(0, Math.min(tile.pollution / 80, 1));
+      return {
+        background: "linear-gradient(135deg, rgba(251,113,133,0.95), rgba(127,29,29,0.95))",
+        opacity: 0.2 + intensity * 0.75
+      };
+    }
+    if (overlayMode === "happiness") {
+      const hue = Math.round((tile.happiness / 100) * 120);
+      return {
+        background: `linear-gradient(135deg, hsla(${hue}, 90%, 55%, 0.95), hsla(${hue}, 90%, 32%, 0.9))`,
+        opacity: 0.76
+      };
+    }
+    return null;
   };
 
   const onTileClick = (x: number, y: number): void => {
@@ -149,14 +195,20 @@ export const CityGrid = () => {
         </p>
       ) : null}
       <p className="mb-3 rounded bg-slate-800 px-2 py-1 text-xs text-slate-300">
-        Service overlay (`S`):{" "}
-        {serviceOverlayMode === "none"
+        Overlay Mode:{" "}
+        {overlayMode === "none"
           ? "Off"
-          : serviceOverlayMode === "education"
-            ? "Education"
-            : serviceOverlayMode === "recreation"
-              ? "Recreation"
-              : "Combined"}
+          : overlayMode === "landValue"
+            ? "Land Value"
+            : overlayMode === "pollution"
+              ? "Pollution"
+              : overlayMode === "happiness"
+                ? "Happiness"
+                : overlayMode === "serviceEducation"
+                  ? "Service: Education"
+                  : overlayMode === "serviceRecreation"
+                    ? "Service: Recreation"
+                    : "Service: Combined"}
       </p>
       <div className="mb-3 flex flex-wrap items-center gap-3 rounded bg-slate-800 px-2 py-1 text-[11px] text-slate-300">
         <span className="font-medium text-slate-200">Legend:</span>
@@ -172,6 +224,7 @@ export const CityGrid = () => {
           <span className="inline-block h-3 w-3 rounded bg-emerald-400/80" />
           Valid move tile
         </span>
+        <span className="text-slate-400">Hotkeys: L land, P pollution, H happiness, S service</span>
       </div>
       <div
         className="grid gap-2"
@@ -183,6 +236,7 @@ export const CityGrid = () => {
           const movePreview = getMovePreview(tile.x, tile.y);
           const buildPreview = getBuildPreview(tile);
           const serviceOverlay = getServiceOverlayOpacity(tile);
+          const singleOverlay = getSingleOverlayStyle(tile);
           if (!tile.buildingId) {
             if (tile.roadType !== "none") {
               const style = roadStyle(tile.roadType);
@@ -211,6 +265,12 @@ export const CityGrid = () => {
                         "radial-gradient(circle at 70% 30%, rgba(163,230,53,0.95), rgba(77,124,15,0.8))"
                     }}
                   />
+                  {singleOverlay ? (
+                    <span
+                      className="pointer-events-none absolute inset-0 rounded"
+                      style={{ background: singleOverlay.background, opacity: singleOverlay.opacity }}
+                    />
+                  ) : null}
                   {movePreview ? (
                     <span
                       className={`pointer-events-none absolute inset-0 rounded ${
@@ -254,6 +314,12 @@ export const CityGrid = () => {
                       "radial-gradient(circle at 70% 30%, rgba(163,230,53,0.95), rgba(77,124,15,0.8))"
                   }}
                 />
+                {singleOverlay ? (
+                  <span
+                    className="pointer-events-none absolute inset-0 rounded"
+                    style={{ background: singleOverlay.background, opacity: singleOverlay.opacity }}
+                  />
+                ) : null}
                 {movePreview ? (
                   <span
                     className={`pointer-events-none absolute inset-0 rounded ${
@@ -307,6 +373,12 @@ export const CityGrid = () => {
                       "radial-gradient(circle at 70% 30%, rgba(163,230,53,0.95), rgba(77,124,15,0.8))"
                   }}
                 />
+                {singleOverlay ? (
+                  <span
+                    className="pointer-events-none absolute inset-0 rounded"
+                    style={{ background: singleOverlay.background, opacity: singleOverlay.opacity }}
+                  />
+                ) : null}
                 {movePreview ? (
                   <span
                     className={`pointer-events-none absolute inset-0 rounded ${
