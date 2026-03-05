@@ -6,6 +6,7 @@ import { loadSnapshot, saveSnapshot } from "@/game/persistence/localStorage";
 import { runSimulation } from "@/game/simulation/engine";
 import type {
   BuildingId,
+  Cost,
   GameStateSnapshot,
   GiftLogEntry,
   LandValueTier,
@@ -136,15 +137,23 @@ const canAfford = (snapshot: GameStateSnapshot, buildingId: BuildingId): boolean
   );
 };
 
-const deductCost = (snapshot: GameStateSnapshot, buildingId: BuildingId): GameStateSnapshot => {
-  const definition = BUILDINGS[buildingId];
+const canAffordCost = (snapshot: GameStateSnapshot, cost: Cost | undefined): boolean => {
+  if (!cost) {
+    return true;
+  }
+  return Object.entries(cost).every(
+    ([resource, amount]) => snapshot.resources[resource as ResourceType] >= (amount ?? 0)
+  );
+};
+
+const deductCost = (snapshot: GameStateSnapshot, cost: Cost): GameStateSnapshot => {
   const next = {
     ...snapshot,
     resources: { ...snapshot.resources },
     tiles: snapshot.tiles.map((tile) => ({ ...tile })),
     gifts: [...snapshot.gifts]
   };
-  for (const [resource, amount] of Object.entries(definition.cost)) {
+  for (const [resource, amount] of Object.entries(cost)) {
     next.resources[resource as ResourceType] -= amount ?? 0;
   }
   return next;
@@ -166,6 +175,7 @@ interface GameActions {
   hydrateFromStorage: () => void;
   selectBuilding: (buildingId: BuildingId | null) => void;
   placeBuilding: (x: number, y: number) => void;
+  upgradeTile: (x: number, y: number) => void;
   inspectTile: (x: number, y: number) => void;
   closeTileInspector: () => void;
   simulateNow: () => void;
@@ -223,9 +233,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
       return;
     }
 
-    const afterCost = deductCost(current, buildingId);
     const now = Date.now();
     const definition = BUILDINGS[buildingId];
+    const afterCost = deductCost(current, definition.cost);
     const placedTiles = afterCost.tiles.map((tile) =>
       tile.x === x && tile.y === y
         ? {
@@ -248,6 +258,51 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set({
       ...nextSnapshot
     });
+    persist(nextSnapshot);
+  },
+
+  upgradeTile: (x, y) => {
+    const state = get();
+    const current = runSimulation(snapshotFromState(state), Date.now()).snapshot;
+    const tile = current.tiles.find((candidate) => candidate.x === x && candidate.y === y);
+    if (!tile || !tile.constructed || !tile.buildingId) {
+      set({ ...current });
+      persist(current);
+      return;
+    }
+
+    const definition = BUILDINGS[tile.buildingId];
+    if (!definition.upgradeTo || !definition.upgradeCriteria || !definition.upgradeCost) {
+      set({ ...current });
+      persist(current);
+      return;
+    }
+    const upgradeTo = definition.upgradeTo;
+
+    const criteriaMet =
+      tile.landValue >= definition.upgradeCriteria.minLandValue &&
+      tile.happiness >= definition.upgradeCriteria.minHappiness;
+    if (!criteriaMet || !canAffordCost(current, definition.upgradeCost)) {
+      set({ ...current });
+      persist(current);
+      return;
+    }
+
+    const afterCost = deductCost(current, definition.upgradeCost);
+    const nextSnapshot: GameStateSnapshot = {
+      ...afterCost,
+      tiles: afterCost.tiles.map((candidate) =>
+        candidate.x === x && candidate.y === y
+          ? {
+              ...candidate,
+              buildingId: upgradeTo
+            }
+          : candidate
+      ),
+      lastSimulatedAt: Date.now()
+    };
+
+    set({ ...nextSnapshot });
     persist(nextSnapshot);
   },
 

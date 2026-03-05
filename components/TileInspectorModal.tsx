@@ -7,7 +7,9 @@ const stat = (value: number): string => value.toFixed(1);
 export const TileInspectorModal = () => {
   const inspectedTile = useGameStore((state) => state.inspectedTile);
   const tiles = useGameStore((state) => state.tiles);
+  const resources = useGameStore((state) => state.resources);
   const demand = useGameStore((state) => state.cityMetrics.demand);
+  const upgradeTile = useGameStore((state) => state.upgradeTile);
   const closeTileInspector = useGameStore((state) => state.closeTileInspector);
 
   if (!inspectedTile) {
@@ -22,6 +24,23 @@ export const TileInspectorModal = () => {
   const building = tile.buildingId ? BUILDINGS[tile.buildingId] : null;
   const isConstructing = Boolean(tile.buildingId && !tile.constructed);
   const landTier = getLandValueTier(tile.landValue);
+  const upgradeTarget = building?.upgradeTo ? BUILDINGS[building.upgradeTo] : null;
+  const upgradeCriteria = building?.upgradeCriteria;
+  const upgradeCost = building?.upgradeCost;
+  const meetsUpgradeCriteria = Boolean(
+    upgradeCriteria &&
+      tile.landValue >= upgradeCriteria.minLandValue &&
+      tile.happiness >= upgradeCriteria.minHappiness
+  );
+  const canAffordUpgrade = Boolean(
+    upgradeCost &&
+      Object.entries(upgradeCost).every(
+        ([resource, amount]) => resources[resource as keyof typeof resources] >= (amount ?? 0)
+      )
+  );
+  const canUpgradeNow = Boolean(
+    tile.constructed && upgradeTarget && upgradeCriteria && upgradeCost && meetsUpgradeCriteria && canAffordUpgrade
+  );
 
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/70 p-4">
@@ -66,6 +85,45 @@ export const TileInspectorModal = () => {
             ) : null}
             {building.category === "recreation" ? (
               <p>Land Value Bonus: {building.landValueBonus ?? 0}</p>
+            ) : null}
+            {upgradeTarget && upgradeCriteria ? (
+              <>
+                <p>
+                  Upgrade Path: {building.name} → {upgradeTarget.name}
+                </p>
+                <p>
+                  Upgrade Requirements: Land Value {upgradeCriteria.minLandValue}+ and Happiness{" "}
+                  {upgradeCriteria.minHappiness}+
+                </p>
+                <p>
+                  Upgrade Cost:{" "}
+                  {Object.entries(upgradeCost ?? {}).map(([resource, amount]) => (
+                    <span key={resource} className="mr-2">
+                      {resource} {amount}
+                    </span>
+                  ))}
+                </p>
+                <p>
+                  Upgrade Status:{" "}
+                  {canUpgradeNow
+                    ? "Ready to upgrade"
+                    : !meetsUpgradeCriteria
+                      ? "Blocked by conditions"
+                      : "Insufficient resources"}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => upgradeTile(tile.x, tile.y)}
+                  disabled={!canUpgradeNow}
+                  className={`mt-1 rounded px-2 py-1 text-xs ${
+                    canUpgradeNow
+                      ? "bg-emerald-700 text-emerald-50 hover:bg-emerald-600"
+                      : "cursor-not-allowed bg-slate-700 text-slate-300"
+                  }`}
+                >
+                  Upgrade to {upgradeTarget.name}
+                </button>
+              </>
             ) : null}
           </div>
         ) : null}

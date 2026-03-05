@@ -10,7 +10,41 @@ export const BUILDINGS: Record<BuildingId, BuildingDefinition> = {
     constructionSeconds: 5,
     cost: { coins: 20 },
     population: 5,
+    upgradeTo: "townhouse",
+    upgradeCost: { coins: 35, energy: 1 },
+    upgradeCriteria: {
+      minLandValue: 45,
+      minHappiness: 55
+    },
     production: { resource: "coins", amountPerCycle: 2, cycleSeconds: 10 }
+  },
+  townhouse: {
+    id: "townhouse",
+    name: "Townhouse",
+    category: "residential",
+    emoji: "🏘️",
+    colorClass: "bg-indigo-700",
+    constructionSeconds: 7,
+    cost: { coins: 40, energy: 2 },
+    population: 8,
+    upgradeTo: "apartment",
+    upgradeCost: { coins: 55, energy: 2 },
+    upgradeCriteria: {
+      minLandValue: 70,
+      minHappiness: 65
+    },
+    production: { resource: "coins", amountPerCycle: 3, cycleSeconds: 10 }
+  },
+  apartment: {
+    id: "apartment",
+    name: "Apartment",
+    category: "residential",
+    emoji: "🏢",
+    colorClass: "bg-sky-700",
+    constructionSeconds: 10,
+    cost: { coins: 65, energy: 3 },
+    population: 14,
+    production: { resource: "coins", amountPerCycle: 5, cycleSeconds: 10 }
   },
   shop: {
     id: "shop",

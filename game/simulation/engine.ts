@@ -250,12 +250,17 @@ export const runSimulation = (
   const next = cloneSnapshot(snapshot);
   const elapsedMinutes = Math.max(0, (now - next.lastSimulatedAt) / 60_000);
   const producedTotals = processConstructionAndProduction(next, now, hooks);
+
+  const initialLaborStats = calculatePopulationAndJobs(next);
+  spreadPollution(next, elapsedMinutes);
+  calculateLandValueAndHappiness(next, initialLaborStats.unemploymentRate);
+
   const { population, jobs, unemploymentRate, commercialJobs, industrialJobs } =
     calculatePopulationAndJobs(next);
   const demand = calculateDemand(population, jobs, commercialJobs, industrialJobs);
-  spreadPollution(next, elapsedMinutes);
   calculateLandValueAndHappiness(next, unemploymentRate);
   collectTaxes(next, population, jobs, elapsedMinutes);
+
   const { averageLandValue, landValueTierCounts } = summarizeLandValue(next.tiles);
   next.cityMetrics = {
     population,

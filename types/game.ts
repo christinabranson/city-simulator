@@ -10,6 +10,8 @@ export type BuildingCategory =
 
 export type BuildingId =
   | "house"
+  | "townhouse"
+  | "apartment"
   | "shop"
   | "factory"
   | "school"
@@ -33,6 +35,12 @@ export interface BuildingDefinition {
   jobs?: number;
   pollution?: number;
   landValueBonus?: number;
+  upgradeTo?: BuildingId;
+  upgradeCost?: Cost;
+  upgradeCriteria?: {
+    minLandValue: number;
+    minHappiness: number;
+  };
   production: {
     resource: ResourceType;
     amountPerCycle: number;
