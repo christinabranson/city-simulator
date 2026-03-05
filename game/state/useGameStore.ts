@@ -368,7 +368,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       destinationTile.roadType !== "none" ||
       !canAffordCost(current, moveCost)
     ) {
-      set({ ...current });
+      set({ ...current, movingBuilding: null, inspectedTile: { x: fromX, y: fromY } });
       persist(current);
       return;
     }
@@ -411,7 +411,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set({
       ...simulated,
       movingBuilding: null,
-      inspectedTile: { x, y }
+      inspectedTile: null
     });
     persist(simulated);
   },
