@@ -87,7 +87,13 @@ export const ResourcePanel = () => {
       </div>
       <div className="mt-3 rounded bg-slate-800 p-2 text-xs text-slate-200">
         Population: {cityMetrics.population} | Jobs: {cityMetrics.jobs} | Unemployment:{" "}
-        {(cityMetrics.unemploymentRate * 100).toFixed(0)}% | Avg Happiness: {cityMetrics.averageHappiness}
+        {(cityMetrics.unemploymentRate * 100).toFixed(0)}% | Avg Happiness: {cityMetrics.averageHappiness} |
+        Avg Land Value: {cityMetrics.averageLandValue}
+      </div>
+      <div className="mt-2 rounded bg-slate-800 p-2 text-xs text-slate-300">
+        Land Tiers - Slum: {cityMetrics.landValueTierCounts.slum} | Basic:{" "}
+        {cityMetrics.landValueTierCounts.basic} | Suburban: {cityMetrics.landValueTierCounts.suburban} |
+        High Value: {cityMetrics.landValueTierCounts.highValue}
       </div>
     </section>
   );

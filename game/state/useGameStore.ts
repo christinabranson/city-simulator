@@ -8,12 +8,19 @@ import type {
   BuildingId,
   GameStateSnapshot,
   GiftLogEntry,
+  LandValueTier,
   ResourceType,
   Tile
 } from "@/types/game";
 
 const GRID_WIDTH = 8;
 const GRID_HEIGHT = 8;
+const DEFAULT_LAND_VALUE_TIERS: Record<LandValueTier, number> = {
+  slum: 0,
+  basic: GRID_WIDTH * GRID_HEIGHT,
+  suburban: 0,
+  highValue: 0
+};
 
 const createDefaultTile = (x: number, y: number): Tile => ({
   x,
@@ -53,6 +60,8 @@ const createInitialSnapshot = (): GameStateSnapshot => ({
     jobs: 0,
     unemploymentRate: 0,
     averageHappiness: 60,
+    averageLandValue: 50,
+    landValueTierCounts: { ...DEFAULT_LAND_VALUE_TIERS },
     demand: {
       residential: 0,
       commercial: 0,
@@ -98,6 +107,10 @@ const normalizeSnapshot = (
     cityMetrics: {
       ...fallback.cityMetrics,
       ...loaded.cityMetrics,
+      landValueTierCounts: {
+        ...fallback.cityMetrics.landValueTierCounts,
+        ...(loaded.cityMetrics?.landValueTierCounts ?? {})
+      },
       demand: {
         ...fallback.cityMetrics.demand,
         ...(loaded.cityMetrics?.demand ?? {})

@@ -1,4 +1,5 @@
 import { BUILDINGS } from "@/game/models/buildings";
+import { getLandValueTier } from "@/game/simulation/landValue";
 import { useGameStore } from "@/game/state/useGameStore";
 
 const stat = (value: number): string => value.toFixed(1);
@@ -20,6 +21,7 @@ export const TileInspectorModal = () => {
 
   const building = tile.buildingId ? BUILDINGS[tile.buildingId] : null;
   const isConstructing = Boolean(tile.buildingId && !tile.constructed);
+  const landTier = getLandValueTier(tile.landValue);
 
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/70 p-4">
@@ -46,6 +48,7 @@ export const TileInspectorModal = () => {
 
         <div className="mt-4 rounded bg-slate-800 p-3 text-sm text-slate-200">
           <p>Land Value: {stat(tile.landValue)}</p>
+          <p>Land Tier: {landTier}</p>
           <p>Pollution: {stat(tile.pollution)}</p>
           <p>Happiness: {stat(tile.happiness)}</p>
         </div>

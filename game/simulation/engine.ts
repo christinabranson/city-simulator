@@ -1,4 +1,5 @@
 import { BUILDINGS } from "@/game/models/buildings";
+import { summarizeLandValue } from "@/game/simulation/landValue";
 import type { GameStateSnapshot, Tile } from "@/types/game";
 
 export interface SimulationHooks {
@@ -255,10 +256,13 @@ export const runSimulation = (
   spreadPollution(next, elapsedMinutes);
   calculateLandValueAndHappiness(next, unemploymentRate);
   collectTaxes(next, population, jobs, elapsedMinutes);
+  const { averageLandValue, landValueTierCounts } = summarizeLandValue(next.tiles);
   next.cityMetrics = {
     population,
     jobs,
     unemploymentRate,
+    averageLandValue,
+    landValueTierCounts,
     demand,
     averageHappiness:
       next.tiles.length > 0

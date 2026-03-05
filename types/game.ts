@@ -1,5 +1,6 @@
 export type ResourceType = "coins" | "energy";
 export type DemandType = "residential" | "commercial" | "industrial";
+export type LandValueTier = "slum" | "basic" | "suburban" | "highValue";
 export type BuildingCategory =
   | "residential"
   | "commercial"
@@ -71,6 +72,8 @@ export interface GameStateSnapshot {
     jobs: number;
     unemploymentRate: number;
     averageHappiness: number;
+    averageLandValue: number;
+    landValueTierCounts: Record<LandValueTier, number>;
     demand: Record<DemandType, number>;
   };
 }
