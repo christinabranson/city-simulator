@@ -6,6 +6,7 @@ const stat = (value: number): string => value.toFixed(1);
 export const TileInspectorModal = () => {
   const inspectedTile = useGameStore((state) => state.inspectedTile);
   const tiles = useGameStore((state) => state.tiles);
+  const demand = useGameStore((state) => state.cityMetrics.demand);
   const closeTileInspector = useGameStore((state) => state.closeTileInspector);
 
   if (!inspectedTile) {
@@ -65,6 +66,17 @@ export const TileInspectorModal = () => {
             ) : null}
           </div>
         ) : null}
+
+        <div className="mt-4 rounded bg-slate-800 p-3 text-xs text-slate-300">
+          <p className="mb-1 font-medium text-slate-200">Demand context</p>
+          {demand.residential >= 30 ? <p>- Housing shortage: residential demand is high.</p> : null}
+          {demand.commercial >= 30 || demand.industrial >= 30 ? (
+            <p>- Job shortage: commercial/industrial demand is rising.</p>
+          ) : null}
+          {demand.residential <= -30 && demand.commercial <= -30 && demand.industrial <= -30 ? (
+            <p>- City growth is currently stable.</p>
+          ) : null}
+        </div>
       </div>
     </div>
   );

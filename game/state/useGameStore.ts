@@ -52,7 +52,12 @@ const createInitialSnapshot = (): GameStateSnapshot => ({
     population: 0,
     jobs: 0,
     unemploymentRate: 0,
-    averageHappiness: 60
+    averageHappiness: 60,
+    demand: {
+      residential: 0,
+      commercial: 0,
+      industrial: 0
+    }
   }
 });
 
@@ -90,7 +95,14 @@ const normalizeSnapshot = (
     tiles,
     lastSimulatedAt: loaded.lastSimulatedAt ?? fallback.lastSimulatedAt,
     gifts: loaded.gifts ?? [],
-    cityMetrics: loaded.cityMetrics ?? fallback.cityMetrics
+    cityMetrics: {
+      ...fallback.cityMetrics,
+      ...loaded.cityMetrics,
+      demand: {
+        ...fallback.cityMetrics.demand,
+        ...(loaded.cityMetrics?.demand ?? {})
+      }
+    }
   };
 };
 

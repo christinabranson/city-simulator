@@ -155,19 +155,49 @@ const spreadPollution = (next: GameStateSnapshot, elapsedMinutes: number): void 
 
 const calculatePopulationAndJobs = (
   next: GameStateSnapshot
-): { population: number; jobs: number; unemploymentRate: number } => {
+): {
+  population: number;
+  jobs: number;
+  unemploymentRate: number;
+  commercialJobs: number;
+  industrialJobs: number;
+} => {
   let population = 0;
   let jobs = 0;
+  let commercialJobs = 0;
+  let industrialJobs = 0;
   for (const tile of next.tiles) {
     if (!tile.constructed || !tile.buildingId) {
       continue;
     }
     const definition = BUILDINGS[tile.buildingId];
     population += definition.population ?? 0;
-    jobs += definition.jobs ?? 0;
+    const tileJobs = definition.jobs ?? 0;
+    jobs += tileJobs;
+    if (definition.category === "commercial") {
+      commercialJobs += tileJobs;
+    } else if (definition.category === "industrial") {
+      industrialJobs += tileJobs;
+    }
   }
   const unemploymentRate = population > 0 ? Math.max(0, population - jobs) / population : 0;
-  return { population, jobs, unemploymentRate };
+  return { population, jobs, unemploymentRate, commercialJobs, industrialJobs };
+};
+
+const calculateDemand = (
+  population: number,
+  jobs: number,
+  commercialJobs: number,
+  industrialJobs: number
+): { residential: number; commercial: number; industrial: number } => {
+  const jobGap = jobs - population;
+  const workerGap = population - jobs;
+
+  const residential = clamp(Math.round(jobGap * 7), -100, 100);
+  const commercial = clamp(Math.round(workerGap * 6 + (population - commercialJobs) * 3), -100, 100);
+  const industrial = clamp(Math.round(workerGap * 5 + (population - industrialJobs) * 2), -100, 100);
+
+  return { residential, commercial, industrial };
 };
 
 const calculateLandValueAndHappiness = (
@@ -219,7 +249,9 @@ export const runSimulation = (
   const next = cloneSnapshot(snapshot);
   const elapsedMinutes = Math.max(0, (now - next.lastSimulatedAt) / 60_000);
   const producedTotals = processConstructionAndProduction(next, now, hooks);
-  const { population, jobs, unemploymentRate } = calculatePopulationAndJobs(next);
+  const { population, jobs, unemploymentRate, commercialJobs, industrialJobs } =
+    calculatePopulationAndJobs(next);
+  const demand = calculateDemand(population, jobs, commercialJobs, industrialJobs);
   spreadPollution(next, elapsedMinutes);
   calculateLandValueAndHappiness(next, unemploymentRate);
   collectTaxes(next, population, jobs, elapsedMinutes);
@@ -227,6 +259,7 @@ export const runSimulation = (
     population,
     jobs,
     unemploymentRate,
+    demand,
     averageHappiness:
       next.tiles.length > 0
         ? Math.round(next.tiles.reduce((sum, tile) => sum + tile.happiness, 0) / next.tiles.length)

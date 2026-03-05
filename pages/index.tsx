@@ -3,6 +3,7 @@ import Head from "next/head";
 import { BuildingPalette } from "@/components/BuildingPalette";
 import { CityGrid } from "@/components/CityGrid";
 import { ConstructionQueuePanel } from "@/components/ConstructionQueuePanel";
+import { DemandPanel } from "@/components/DemandPanel";
 import { ResourcePanel } from "@/components/ResourcePanel";
 import { SocialPanel } from "@/components/SocialPanel";
 import { TileInspectorModal } from "@/components/TileInspectorModal";
@@ -32,6 +33,7 @@ export default function Home() {
             </div>
             <div className="space-y-4">
               <BuildingPalette />
+              <DemandPanel />
               <ConstructionQueuePanel />
               <SocialPanel />
             </div>

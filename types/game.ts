@@ -1,4 +1,5 @@
 export type ResourceType = "coins" | "energy";
+export type DemandType = "residential" | "commercial" | "industrial";
 export type BuildingCategory =
   | "residential"
   | "commercial"
@@ -70,6 +71,7 @@ export interface GameStateSnapshot {
     jobs: number;
     unemploymentRate: number;
     averageHappiness: number;
+    demand: Record<DemandType, number>;
   };
 }
 
