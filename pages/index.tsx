@@ -7,6 +7,7 @@ import { DemandPanel } from "@/components/DemandPanel";
 import { ResourcePanel } from "@/components/ResourcePanel";
 import { SocialPanel } from "@/components/SocialPanel";
 import { TileInspectorModal } from "@/components/TileInspectorModal";
+import { ToastStack } from "@/components/ToastStack";
 import { useHydratedGame } from "@/hooks/useHydratedGame";
 import { useGameStore } from "@/game/state/useGameStore";
 
@@ -40,6 +41,7 @@ export default function Home() {
           </div>
         )}
         <TileInspectorModal />
+        <ToastStack />
       </main>
     </>
   );

@@ -3,6 +3,7 @@ export type DemandType = "residential" | "commercial" | "industrial";
 export type LandValueTier = "slum" | "basic" | "suburban" | "highValue";
 export type RoadType = "none" | "road" | "heavyRoad" | "highway";
 export type ServiceType = "education" | "recreation";
+export type ToastType = "success" | "info" | "warning" | "error";
 export type BuildingCategory =
   | "residential"
   | "commercial"
@@ -104,4 +105,12 @@ export interface ConstructionQueueItem {
   buildingId: BuildingId;
   buildingName: string;
   readyAt: number;
+}
+
+export interface ToastMessage {
+  id: string;
+  type: ToastType;
+  message: string;
+  createdAt: number;
+  durationMs: number;
 }

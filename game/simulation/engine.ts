@@ -48,10 +48,32 @@ const hasAdjacentRoad = (tile: Tile, tiles: Tile[], indexByCoordinate: Map<strin
   return neighbors.some((neighborIndex) => tiles[neighborIndex].roadType !== "none");
 };
 
+const roadTierValue = (roadType: Tile["roadType"]): number => {
+  if (roadType === "heavyRoad") {
+    return 1;
+  }
+  if (roadType === "highway") {
+    return 2;
+  }
+  return 0;
+};
+
+const getRoadAccessQuality = (
+  tile: Tile,
+  tiles: Tile[],
+  indexByCoordinate: Map<string, number>
+): number => {
+  const neighbors = getNeighbors(tile, indexByCoordinate);
+  return neighbors.reduce((maxTier, neighborIndex) => {
+    const tier = roadTierValue(tiles[neighborIndex].roadType);
+    return Math.max(maxTier, tier);
+  }, 0);
+};
+
 const getNearbyCategoryCount = (
   tiles: Tile[],
   center: Tile,
-  category: "industrial" | "civic" | "recreation"
+  category: "residential" | "commercial" | "industrial" | "civic" | "recreation"
 ): number => {
   let count = 0;
   for (const tile of tiles) {
@@ -69,6 +91,23 @@ const getNearbyCategoryCount = (
   }
   return count;
 };
+
+const getAdjacentCategoryCount = (
+  tiles: Tile[],
+  center: Tile,
+  category: "residential" | "commercial" | "industrial" | "civic" | "recreation"
+): number =>
+  tiles.filter((tile) => {
+    if (!tile.constructed || !tile.buildingId || !tile.isActive) {
+      return false;
+    }
+    const definition = BUILDINGS[tile.buildingId];
+    if (definition.category !== category) {
+      return false;
+    }
+    const distance = Math.abs(tile.x - center.x) + Math.abs(tile.y - center.y);
+    return distance === 1;
+  }).length;
 
 const processConstructionAndProduction = (
   next: GameStateSnapshot,
@@ -118,10 +157,17 @@ const processConstructionAndProduction = (
 
     const producedAmount = completedCycles * definition.production.amountPerCycle;
     const resource = definition.production.resource;
-    next.resources[resource] += producedAmount;
+    let adjustedProducedAmount = producedAmount;
+    if (definition.category === "commercial") {
+      const adjacentHomes = getAdjacentCategoryCount(next.tiles, tile, "residential");
+      const commercialBonusMultiplier = Math.min(0.5, adjacentHomes * 0.1);
+      adjustedProducedAmount = Math.floor(producedAmount * (1 + commercialBonusMultiplier));
+    }
+
+    next.resources[resource] += adjustedProducedAmount;
     tile.lastProducedAt = lastProduced + completedCycles * cycleMs;
-    producedTotals[resource] = (producedTotals[resource] ?? 0) + producedAmount;
-    hooks?.onResourceProduced?.(resource, producedAmount);
+    producedTotals[resource] = (producedTotals[resource] ?? 0) + adjustedProducedAmount;
+    hooks?.onResourceProduced?.(resource, adjustedProducedAmount);
   }
 
   return producedTotals;
@@ -227,6 +273,11 @@ const calculateDemand = (
 const calculateServiceCoverage = (
   next: GameStateSnapshot
 ): { education: number; recreation: number } => {
+  const indexByCoordinate = new Map<string, number>();
+  next.tiles.forEach((tile, index) => {
+    indexByCoordinate.set(`${tile.x},${tile.y}`, index);
+  });
+
   for (const tile of next.tiles) {
     tile.serviceCoverage.education = false;
     tile.serviceCoverage.recreation = false;
@@ -240,10 +291,12 @@ const calculateServiceCoverage = (
     if (!provider) {
       continue;
     }
+    const roadBonusRadius = getRoadAccessQuality(sourceTile, next.tiles, indexByCoordinate);
+    const effectiveRadius = provider.radius + roadBonusRadius;
 
     for (const targetTile of next.tiles) {
       const distance = Math.abs(sourceTile.x - targetTile.x) + Math.abs(sourceTile.y - targetTile.y);
-      if (distance <= provider.radius) {
+      if (distance <= effectiveRadius) {
         targetTile.serviceCoverage[provider.type] = true;
       }
     }
@@ -267,11 +320,20 @@ const calculateLandValueAndHappiness = (
   next: GameStateSnapshot,
   unemploymentRate: number
 ): void => {
+  const indexByCoordinate = new Map<string, number>();
+  next.tiles.forEach((tile, index) => {
+    indexByCoordinate.set(`${tile.x},${tile.y}`, index);
+  });
+
   for (const tile of next.tiles) {
     const nearbyRecreation = getNearbyCategoryCount(next.tiles, tile, "recreation");
     const nearbyCivic = getNearbyCategoryCount(next.tiles, tile, "civic");
     const nearbyIndustrial = getNearbyCategoryCount(next.tiles, tile, "industrial");
+    const adjacentRecreation = getAdjacentCategoryCount(next.tiles, tile, "recreation");
+    const adjacentIndustrial = getAdjacentCategoryCount(next.tiles, tile, "industrial");
+    const adjacentResidential = getAdjacentCategoryCount(next.tiles, tile, "residential");
     const building = tile.buildingId && tile.isActive ? BUILDINGS[tile.buildingId] : null;
+    const roadAccessQuality = tile.isActive ? getRoadAccessQuality(tile, next.tiles, indexByCoordinate) : 0;
 
     const landValueRaw =
       50 +
@@ -282,7 +344,14 @@ const calculateLandValueAndHappiness = (
       (building?.landValueBonus ?? 0) -
       nearbyIndustrial * 5 -
       tile.pollution * 0.6;
-    tile.landValue = clamp(landValueRaw, 0, 100);
+    let adjustedLandValueRaw = landValueRaw;
+    if (building?.category === "residential") {
+      adjustedLandValueRaw += adjacentRecreation * 4 - adjacentIndustrial * 2;
+    }
+    if (building?.category === "commercial") {
+      adjustedLandValueRaw += adjacentResidential * 2;
+    }
+    tile.landValue = clamp(adjustedLandValueRaw, 0, 100);
 
     let happinessRaw =
       55 +
@@ -290,9 +359,19 @@ const calculateLandValueAndHappiness = (
       nearbyCivic * 6 +
       (tile.serviceCoverage.recreation ? 8 : 0) +
       (tile.serviceCoverage.education ? 6 : 0) +
+      roadAccessQuality * 3 +
       tile.landValue * 0.2 -
       nearbyIndustrial * 4 -
       tile.pollution * 1.1;
+    if (building?.category === "residential") {
+      happinessRaw += adjacentRecreation * 7 - adjacentIndustrial * 10;
+    }
+    if (building?.category === "commercial") {
+      happinessRaw += adjacentResidential * 3;
+    }
+    if (building?.category === "industrial") {
+      happinessRaw -= adjacentResidential * 4;
+    }
     if (building?.category === "residential") {
       happinessRaw -= unemploymentRate * 25;
     }

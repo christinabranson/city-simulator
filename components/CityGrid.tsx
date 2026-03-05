@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+
 import { BUILDINGS } from "@/game/models/buildings";
 import { useGameStore } from "@/game/state/useGameStore";
 
@@ -6,16 +8,56 @@ const toRelativeTime = (timestamp: number): string => {
   return `${diffSeconds}s`;
 };
 
+const roadStyle = (roadType: "road" | "heavyRoad" | "highway"): { className: string; icon: string } => {
+  if (roadType === "heavyRoad") {
+    return { className: "bg-slate-500 hover:bg-slate-400", icon: "🛤️" };
+  }
+  if (roadType === "highway") {
+    return { className: "bg-neutral-500 hover:bg-neutral-400", icon: "🛣" };
+  }
+  return { className: "bg-slate-600 hover:bg-slate-500", icon: "🛣️" };
+};
+
+type ServiceOverlayMode = "none" | "education" | "recreation" | "combined";
+
 export const CityGrid = () => {
   const tiles = useGameStore((state) => state.tiles);
   const width = useGameStore((state) => state.gridWidth);
   const selectedBuildingId = useGameStore((state) => state.selectedBuildingId);
   const selectedRoadType = useGameStore((state) => state.selectedRoadType);
   const movingBuilding = useGameStore((state) => state.movingBuilding);
+  const resources = useGameStore((state) => state.resources);
   const placeBuilding = useGameStore((state) => state.placeBuilding);
   const placeMovedBuilding = useGameStore((state) => state.placeMovedBuilding);
   const toggleRoad = useGameStore((state) => state.toggleRoad);
   const inspectTile = useGameStore((state) => state.inspectTile);
+  const [serviceOverlayMode, setServiceOverlayMode] = useState<ServiceOverlayMode>("none");
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key.toLowerCase() !== "s") {
+        return;
+      }
+      event.preventDefault();
+      setServiceOverlayMode((previous) => {
+        if (previous === "none") {
+          return "education";
+        }
+        if (previous === "education") {
+          return "recreation";
+        }
+        if (previous === "recreation") {
+          return "combined";
+        }
+        return "none";
+      });
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, []);
 
   const getMovePreview = (x: number, y: number): { isSource: boolean; canPlace: boolean } | null => {
     if (!movingBuilding) {
@@ -28,6 +70,56 @@ export const CityGrid = () => {
     const isSource = movingBuilding.fromX === x && movingBuilding.fromY === y;
     const canPlace = !isSource && tile.buildingId === null && tile.roadType === "none";
     return { isSource, canPlace };
+  };
+
+  const canAffordSelectedBuilding = (() => {
+    if (!selectedBuildingId) {
+      return false;
+    }
+    const cost = BUILDINGS[selectedBuildingId].cost;
+    return Object.entries(cost).every(
+      ([resource, amount]) => resources[resource as keyof typeof resources] >= (amount ?? 0)
+    );
+  })();
+
+  const hasAdjacentRoad = (x: number, y: number): boolean => {
+    const neighbors = [
+      [x, y - 1],
+      [x + 1, y],
+      [x, y + 1],
+      [x - 1, y]
+    ];
+    return neighbors.some(([nx, ny]) => tiles.some((tile) => tile.x === nx && tile.y === ny && tile.roadType !== "none"));
+  };
+
+  const getBuildPreview = (
+    tile: (typeof tiles)[number]
+  ): { canPlace: boolean } | null => {
+    if (!selectedBuildingId || selectedRoadType || movingBuilding) {
+      return null;
+    }
+    const canPlace =
+      tile.buildingId === null &&
+      tile.roadType === "none" &&
+      hasAdjacentRoad(tile.x, tile.y) &&
+      canAffordSelectedBuilding;
+    return { canPlace };
+  };
+
+  const getServiceOverlayOpacity = (tile: (typeof tiles)[number]): { education: number; recreation: number } => {
+    if (serviceOverlayMode === "none") {
+      return { education: 0, recreation: 0 };
+    }
+    if (serviceOverlayMode === "education") {
+      return { education: tile.serviceCoverage.education ? 0.78 : 0, recreation: 0 };
+    }
+    if (serviceOverlayMode === "recreation") {
+      return { education: 0, recreation: tile.serviceCoverage.recreation ? 0.78 : 0 };
+    }
+    return {
+      education: tile.serviceCoverage.education ? 0.58 : 0,
+      recreation: tile.serviceCoverage.recreation ? 0.58 : 0
+    };
   };
 
   const onTileClick = (x: number, y: number): void => {
@@ -56,6 +148,31 @@ export const CityGrid = () => {
           Move mode: select a destination tile for {BUILDINGS[movingBuilding.buildingId].name}
         </p>
       ) : null}
+      <p className="mb-3 rounded bg-slate-800 px-2 py-1 text-xs text-slate-300">
+        Service overlay (`S`):{" "}
+        {serviceOverlayMode === "none"
+          ? "Off"
+          : serviceOverlayMode === "education"
+            ? "Education"
+            : serviceOverlayMode === "recreation"
+              ? "Recreation"
+              : "Combined"}
+      </p>
+      <div className="mb-3 flex flex-wrap items-center gap-3 rounded bg-slate-800 px-2 py-1 text-[11px] text-slate-300">
+        <span className="font-medium text-slate-200">Legend:</span>
+        <span className="inline-flex items-center gap-1">
+          <span className="inline-block h-3 w-3 rounded bg-cyan-400" />
+          Education coverage
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <span className="inline-block h-3 w-3 rounded bg-lime-400" />
+          Recreation coverage
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <span className="inline-block h-3 w-3 rounded bg-emerald-400/80" />
+          Valid move tile
+        </span>
+      </div>
       <div
         className="grid gap-2"
         style={{
@@ -64,15 +181,36 @@ export const CityGrid = () => {
       >
         {tiles.map((tile) => {
           const movePreview = getMovePreview(tile.x, tile.y);
+          const buildPreview = getBuildPreview(tile);
+          const serviceOverlay = getServiceOverlayOpacity(tile);
           if (!tile.buildingId) {
             if (tile.roadType !== "none") {
+              const style = roadStyle(tile.roadType);
               return (
                 <button
                   key={`${tile.x}-${tile.y}`}
                   type="button"
                   onClick={() => onTileClick(tile.x, tile.y)}
-                  className="relative aspect-square rounded border border-slate-700 bg-slate-600 text-xs text-slate-100 hover:bg-slate-500"
+                  className={`relative aspect-square rounded border border-slate-700 text-xs text-slate-100 ${
+                    buildPreview ? (buildPreview.canPlace ? "cursor-copy" : "cursor-not-allowed") : ""
+                  } ${style.className}`}
                 >
+                  <span
+                    className="pointer-events-none absolute inset-0 rounded"
+                    style={{
+                      opacity: serviceOverlay.education,
+                      background:
+                        "radial-gradient(circle at 30% 30%, rgba(103,232,249,0.95), rgba(8,145,178,0.8))"
+                    }}
+                  />
+                  <span
+                    className="pointer-events-none absolute inset-0 rounded"
+                    style={{
+                      opacity: serviceOverlay.recreation,
+                      background:
+                        "radial-gradient(circle at 70% 30%, rgba(163,230,53,0.95), rgba(77,124,15,0.8))"
+                    }}
+                  />
                   {movePreview ? (
                     <span
                       className={`pointer-events-none absolute inset-0 rounded ${
@@ -80,7 +218,14 @@ export const CityGrid = () => {
                       }`}
                     />
                   ) : null}
-                  <span className="relative z-10 text-base">🛣️</span>
+                  {buildPreview ? (
+                    <span
+                      className={`pointer-events-none absolute inset-0 rounded ${
+                        buildPreview.canPlace ? "bg-emerald-500/45" : "bg-rose-500/55"
+                      }`}
+                    />
+                  ) : null}
+                  <span className="relative z-10 text-base">{style.icon}</span>
                 </button>
               );
             }
@@ -89,12 +234,37 @@ export const CityGrid = () => {
                 key={`${tile.x}-${tile.y}`}
                 type="button"
                 onClick={() => onTileClick(tile.x, tile.y)}
-                className="relative aspect-square rounded border border-slate-700 bg-slate-800 text-xs text-slate-300 hover:bg-slate-700"
+                className={`relative aspect-square rounded border border-slate-700 bg-slate-800 text-xs text-slate-300 hover:bg-slate-700 ${
+                  buildPreview ? (buildPreview.canPlace ? "cursor-copy" : "cursor-not-allowed") : ""
+                }`}
               >
+                <span
+                  className="pointer-events-none absolute inset-0 rounded"
+                  style={{
+                    opacity: serviceOverlay.education,
+                    background:
+                      "radial-gradient(circle at 30% 30%, rgba(103,232,249,0.95), rgba(8,145,178,0.8))"
+                  }}
+                />
+                <span
+                  className="pointer-events-none absolute inset-0 rounded"
+                  style={{
+                    opacity: serviceOverlay.recreation,
+                    background:
+                      "radial-gradient(circle at 70% 30%, rgba(163,230,53,0.95), rgba(77,124,15,0.8))"
+                  }}
+                />
                 {movePreview ? (
                   <span
                     className={`pointer-events-none absolute inset-0 rounded ${
                       movePreview.canPlace ? "bg-emerald-500/45" : "bg-rose-500/45"
+                    }`}
+                  />
+                ) : null}
+                {buildPreview ? (
+                  <span
+                    className={`pointer-events-none absolute inset-0 rounded ${
+                      buildPreview.canPlace ? "bg-emerald-500/45" : "bg-rose-500/55"
                     }`}
                   />
                 ) : null}
@@ -117,14 +287,35 @@ export const CityGrid = () => {
               key={`${tile.x}-${tile.y}`}
               type="button"
                 onClick={() => onTileClick(tile.x, tile.y)}
-                className={`relative aspect-square rounded border border-slate-700 text-center text-xs ${building.colorClass}`}
+                className={`relative aspect-square rounded border border-slate-700 text-center text-xs ${
+                  buildPreview ? "cursor-not-allowed" : ""
+                } ${building.colorClass}`}
             >
+                <span
+                  className="pointer-events-none absolute inset-0 rounded"
+                  style={{
+                    opacity: serviceOverlay.education,
+                    background:
+                      "radial-gradient(circle at 30% 30%, rgba(103,232,249,0.95), rgba(8,145,178,0.8))"
+                  }}
+                />
+                <span
+                  className="pointer-events-none absolute inset-0 rounded"
+                  style={{
+                    opacity: serviceOverlay.recreation,
+                    background:
+                      "radial-gradient(circle at 70% 30%, rgba(163,230,53,0.95), rgba(77,124,15,0.8))"
+                  }}
+                />
                 {movePreview ? (
                   <span
                     className={`pointer-events-none absolute inset-0 rounded ${
                       movePreview.isSource ? "bg-amber-500/45" : "bg-rose-500/45"
                     }`}
                   />
+                ) : null}
+                {buildPreview ? (
+                  <span className="pointer-events-none absolute inset-0 rounded bg-rose-500/55" />
                 ) : null}
                 <span
                   className="pointer-events-none absolute inset-0 rounded bg-red-500"

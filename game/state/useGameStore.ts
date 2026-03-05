@@ -2,7 +2,7 @@ import { create } from "zustand";
 
 import { BUILDINGS } from "@/game/models/buildings";
 import { getScaledCost } from "@/game/models/costs";
-import { MOVE_COST_RATIO } from "@/game/models/economy";
+import { MOVE_COST_RATIO, ROAD_COSTS } from "@/game/models/economy";
 import { MOCK_CITIES } from "@/game/models/mockCities";
 import { loadSnapshot, saveSnapshot } from "@/game/persistence/localStorage";
 import { runSimulation } from "@/game/simulation/engine";
@@ -14,6 +14,8 @@ import type {
   LandValueTier,
   ResourceType,
   RoadType,
+  ToastMessage,
+  ToastType,
   Tile
 } from "@/types/game";
 
@@ -184,6 +186,27 @@ const deductCost = (snapshot: GameStateSnapshot, cost: Cost): GameStateSnapshot 
   return next;
 };
 
+const hasAdjacentRoad = (tiles: Tile[], x: number, y: number): boolean => {
+  const neighbors = [
+    [x, y - 1],
+    [x + 1, y],
+    [x, y + 1],
+    [x - 1, y]
+  ];
+  return neighbors.some(([nx, ny]) => tiles.some((tile) => tile.x === nx && tile.y === ny && tile.roadType !== "none"));
+};
+
+const getConstructedCompletions = (previousTiles: Tile[], nextTiles: Tile[]): Tile[] => {
+  const previousByKey = new Map(previousTiles.map((tile) => [`${tile.x},${tile.y}`, tile]));
+  return nextTiles.filter((tile) => {
+    if (!tile.buildingId || !tile.constructed) {
+      return false;
+    }
+    const previous = previousByKey.get(`${tile.x},${tile.y}`);
+    return Boolean(previous && previous.buildingId === tile.buildingId && !previous.constructed);
+  });
+};
+
 const persist = (snapshot: GameStateSnapshot): void => {
   saveSnapshot(snapshot);
 };
@@ -196,6 +219,7 @@ interface UiState {
   nextAutoSimAt: number | null;
   inspectedTile: { x: number; y: number } | null;
   movingBuilding: { fromX: number; fromY: number; buildingId: BuildingId; moveCost: Cost } | null;
+  toasts: ToastMessage[];
 }
 
 interface GameActions {
@@ -213,6 +237,8 @@ interface GameActions {
   closeTileInspector: () => void;
   simulateNow: () => void;
   setNextAutoSimAt: (timestamp: number | null) => void;
+  pushToast: (type: ToastType, message: string, durationMs?: number) => void;
+  dismissToast: (id: string) => void;
   giftResource: (resource: ResourceType, amount: number) => void;
   visitNeighborCity: (cityId: string) => void;
 }
@@ -228,6 +254,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   nextAutoSimAt: null,
   inspectedTile: null,
   movingBuilding: null,
+  toasts: [],
 
   hydrateFromStorage: () => {
     if (get().hydrated) {
@@ -240,6 +267,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
       ...simulated,
       hydrated: true
     });
+    const completedTiles = getConstructedCompletions(base.tiles, simulated.tiles).slice(0, 3);
+    for (const tile of completedTiles) {
+      const buildingName = tile.buildingId ? BUILDINGS[tile.buildingId].name : "Building";
+      get().pushToast("success", `${buildingName} construction complete.`);
+    }
   },
 
   selectBuilding: (buildingId) => {
@@ -262,6 +294,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (!targetTile || targetTile.buildingId || targetTile.roadType !== "none") {
       set({ ...current });
       persist(current);
+      get().pushToast("warning", "Cannot place building on an occupied tile.");
+      return;
+    }
+    if (!hasAdjacentRoad(current.tiles, x, y)) {
+      set({ ...current });
+      persist(current);
+      get().pushToast("warning", "Cannot place building: no adjacent road.");
       return;
     }
 
@@ -269,6 +308,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (!canAfford(current, buildingId)) {
       set({ ...current });
       persist(current);
+      get().pushToast("error", "Insufficient resources to place building.");
       return;
     }
 
@@ -301,6 +341,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       ...nextSnapshot
     });
     persist(nextSnapshot);
+    get().pushToast("success", `${definition.name} ordered for construction.`);
   },
 
   toggleRoad: (x, y) => {
@@ -314,13 +355,24 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (!tile || tile.buildingId) {
       set({ ...current });
       persist(current);
+      get().pushToast("warning", "Roads can only be placed on empty tiles.");
       return;
     }
 
-    const nextRoadType = tile.roadType === "none" ? state.selectedRoadType : "none";
+    const selectedRoadType = state.selectedRoadType;
+    const nextRoadType = tile.roadType === selectedRoadType ? "none" : selectedRoadType;
+    const placingOrChangingRoad = nextRoadType !== "none";
+    if (placingOrChangingRoad && !canAffordCost(current, ROAD_COSTS[nextRoadType])) {
+      set({ ...current });
+      persist(current);
+      get().pushToast("error", "Insufficient resources for selected road tier.");
+      return;
+    }
+
+    const afterRoadCost = placingOrChangingRoad ? deductCost(current, ROAD_COSTS[nextRoadType]) : current;
     const updatedSnapshot: GameStateSnapshot = {
-      ...current,
-      tiles: current.tiles.map((candidate) =>
+      ...afterRoadCost,
+      tiles: afterRoadCost.tiles.map((candidate) =>
         candidate.x === x && candidate.y === y
           ? {
               ...candidate,
@@ -334,6 +386,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const simulated = runSimulation(updatedSnapshot, now).snapshot;
     set({ ...simulated });
     persist(simulated);
+    get().pushToast("info", nextRoadType === "none" ? "Road removed." : "Road updated.");
   },
 
   beginMoveTile: (x, y) => {
@@ -343,6 +396,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (!tile || !tile.constructed || !tile.buildingId) {
       set({ ...current, movingBuilding: null });
       persist(current);
+      get().pushToast("warning", "Only completed buildings can be moved.");
       return;
     }
 
@@ -361,6 +415,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       }
     });
     persist(current);
+    get().pushToast("info", `Move mode: select a new tile for ${definition.name}.`);
   },
 
   placeMovedBuilding: (x, y) => {
@@ -386,6 +441,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
     ) {
       set({ ...current, movingBuilding: null, inspectedTile: { x: fromX, y: fromY } });
       persist(current);
+      get().pushToast("warning", "Move cancelled: invalid destination or insufficient resources.");
+      return;
+    }
+    if (!hasAdjacentRoad(current.tiles, x, y)) {
+      set({ ...current, movingBuilding: null, inspectedTile: { x: fromX, y: fromY } });
+      persist(current);
+      get().pushToast("warning", "Move cancelled: destination needs adjacent road.");
       return;
     }
 
@@ -430,10 +492,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
       inspectedTile: null
     });
     persist(simulated);
+    get().pushToast("success", `${BUILDINGS[buildingId].name} moved.`);
   },
 
   cancelMove: () => {
     set({ movingBuilding: null });
+    get().pushToast("info", "Move cancelled.");
   },
 
   bulldozeTile: (x, y) => {
@@ -444,6 +508,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (!tile || !tile.buildingId) {
       set({ ...current });
       persist(current);
+      get().pushToast("warning", "No building to bulldoze on this tile.");
       return;
     }
 
@@ -469,6 +534,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const simulated = runSimulation(bulldozedSnapshot, now).snapshot;
     set({ ...simulated, inspectedTile: { x, y } });
     persist(simulated);
+    get().pushToast("success", "Building bulldozed.");
   },
 
   upgradeTile: (x, y) => {
@@ -478,6 +544,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (!tile || !tile.constructed || !tile.buildingId) {
       set({ ...current });
       persist(current);
+      get().pushToast("warning", "Only completed buildings can be upgraded.");
       return;
     }
 
@@ -485,6 +552,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (!definition.upgradeTo || !definition.upgradeCriteria || !definition.upgradeCost) {
       set({ ...current });
       persist(current);
+      get().pushToast("warning", "This building has no upgrade path.");
       return;
     }
     const upgradeTo = definition.upgradeTo;
@@ -495,6 +563,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (!criteriaMet || !canAffordCost(current, definition.upgradeCost)) {
       set({ ...current });
       persist(current);
+      get().pushToast("warning", "Upgrade blocked by conditions or resources.");
       return;
     }
 
@@ -514,6 +583,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     set({ ...nextSnapshot });
     persist(nextSnapshot);
+    get().pushToast("success", `${definition.name} upgraded to ${BUILDINGS[upgradeTo].name}.`);
   },
 
   inspectTile: (x, y) => {
@@ -526,15 +596,40 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   simulateNow: () => {
     const state = get();
-    const simulated = runSimulation(snapshotFromState(state), Date.now()).snapshot;
+    const snapshot = snapshotFromState(state);
+    const simulated = runSimulation(snapshot, Date.now()).snapshot;
     set({
       ...simulated
     });
     persist(simulated);
+    const completedTiles = getConstructedCompletions(snapshot.tiles, simulated.tiles).slice(0, 3);
+    for (const tile of completedTiles) {
+      const buildingName = tile.buildingId ? BUILDINGS[tile.buildingId].name : "Building";
+      get().pushToast("success", `${buildingName} construction complete.`);
+    }
   },
 
   setNextAutoSimAt: (timestamp) => {
     set({ nextAutoSimAt: timestamp });
+  },
+
+  pushToast: (type, message, durationMs = 2600) => {
+    set((state) => ({
+      toasts: [
+        ...state.toasts,
+        {
+          id: `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+          type,
+          message,
+          createdAt: Date.now(),
+          durationMs
+        }
+      ].slice(-6)
+    }));
+  },
+
+  dismissToast: (id) => {
+    set((state) => ({ toasts: state.toasts.filter((toast) => toast.id !== id) }));
   },
 
   giftResource: (resource, amount) => {

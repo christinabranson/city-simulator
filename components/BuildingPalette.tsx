@@ -1,4 +1,5 @@
 import { BUILDING_LIST } from "@/game/models/buildings";
+import { ROAD_COSTS } from "@/game/models/economy";
 import { useGameStore } from "@/game/state/useGameStore";
 
 export const BuildingPalette = () => {
@@ -26,17 +27,39 @@ export const BuildingPalette = () => {
         >
           Cursor only
         </button>
-        <button
-          type="button"
-          onClick={() => selectRoadTool("road")}
-          className={`w-full rounded border px-3 py-2 text-left text-sm ${
-            selectedRoadType === "road"
-              ? "border-sky-500 bg-sky-900/30"
-              : "border-slate-700 bg-slate-800 hover:bg-slate-700"
-          }`}
-        >
-          🛣️ Road tool
-        </button>
+        <div className="grid grid-cols-3 gap-2">
+          {[
+            { id: "road", label: "Road", icon: "🛣️" },
+            { id: "heavyRoad", label: "Heavy", icon: "🛤️" },
+            { id: "highway", label: "Highway", icon: "🛣" }
+          ].map((road) => {
+            const cost = ROAD_COSTS[road.id as "road" | "heavyRoad" | "highway"];
+            const affordable = Object.entries(cost).every(
+              ([resource, amount]) => resources[resource as keyof typeof resources] >= (amount ?? 0)
+            );
+            return (
+              <button
+                key={road.id}
+                type="button"
+                onClick={() => selectRoadTool(road.id as "road" | "heavyRoad" | "highway")}
+                className={`rounded border px-2 py-2 text-center text-xs ${
+                  selectedRoadType === road.id
+                    ? "border-sky-500 bg-sky-900/30"
+                    : "border-slate-700 bg-slate-800 hover:bg-slate-700"
+                }`}
+              >
+                <div>{road.icon}</div>
+                <div>{road.label}</div>
+                <div className="text-[10px] text-slate-300">
+                  {Object.entries(cost)
+                    .map(([resource, amount]) => `${resource}:${amount}`)
+                    .join(" ")}
+                </div>
+                {!affordable ? <div className="text-[10px] text-rose-300">Low</div> : null}
+              </button>
+            );
+          })}
+        </div>
         {BUILDING_LIST.map((building) => {
           const affordable = Object.entries(building.cost).every(
             ([resource, amount]) => resources[resource as keyof typeof resources] >= (amount ?? 0)

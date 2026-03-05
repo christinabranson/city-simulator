@@ -5,6 +5,12 @@ import { getLandValueTier } from "@/game/simulation/landValue";
 import { useGameStore } from "@/game/state/useGameStore";
 
 const stat = (value: number): string => value.toFixed(1);
+const roadLabel: Record<string, string> = {
+  none: "No road",
+  road: "Road (base)",
+  heavyRoad: "Heavy road (+service reach)",
+  highway: "Highway (++service reach)"
+};
 
 export const TileInspectorModal = () => {
   const inspectedTile = useGameStore((state) => state.inspectedTile);
@@ -81,7 +87,7 @@ export const TileInspectorModal = () => {
             Coordinates: ({tile.x}, {tile.y})
           </p>
           <p>Building: {building ? `${building.emoji} ${building.name}` : "Empty"}</p>
-          <p>Road: {tile.roadType === "none" ? "No road" : tile.roadType}</p>
+          <p>Road: {roadLabel[tile.roadType]}</p>
           <p>Category: {building?.category ?? "N/A"}</p>
           <p>
             Status:{" "}
