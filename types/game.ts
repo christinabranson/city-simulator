@@ -2,6 +2,7 @@ export type ResourceType = "coins" | "energy";
 export type DemandType = "residential" | "commercial" | "industrial";
 export type LandValueTier = "slum" | "basic" | "suburban" | "highValue";
 export type RoadType = "none" | "road" | "heavyRoad" | "highway";
+export type ServiceType = "education" | "recreation";
 export type BuildingCategory =
   | "residential"
   | "commercial"
@@ -42,6 +43,10 @@ export interface BuildingDefinition {
     minLandValue: number;
     minHappiness: number;
   };
+  serviceProvider?: {
+    type: ServiceType;
+    radius: number;
+  };
   production: {
     resource: ResourceType;
     amountPerCycle: number;
@@ -63,6 +68,7 @@ export interface Tile {
   pollution: number;
   landValue: number;
   happiness: number;
+  serviceCoverage: Record<ServiceType, boolean>;
 }
 
 export interface GiftLogEntry {
@@ -87,6 +93,7 @@ export interface GameStateSnapshot {
     averageLandValue: number;
     landValueTierCounts: Record<LandValueTier, number>;
     demand: Record<DemandType, number>;
+    serviceCoverageCounts: Record<ServiceType, number>;
   };
 }
 

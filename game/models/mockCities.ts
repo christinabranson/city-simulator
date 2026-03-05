@@ -25,7 +25,11 @@ const makeTiles = (width: number, height: number): Tile[] => {
         lastProducedAt: null,
         pollution: 0,
         landValue: 50,
-        happiness: 60
+        happiness: 60,
+        serviceCoverage: {
+          education: false,
+          recreation: false
+        }
       });
     }
   }

@@ -43,6 +43,7 @@ export const CityGrid = () => {
 
     if (selectedBuildingId) {
       placeBuilding(x, y);
+      return;
     }
     inspectTile(x, y);
   };

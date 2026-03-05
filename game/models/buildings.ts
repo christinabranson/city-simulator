@@ -77,6 +77,10 @@ export const BUILDINGS: Record<BuildingId, BuildingDefinition> = {
     colorClass: "bg-cyan-700",
     constructionSeconds: 12,
     cost: { coins: 50, energy: 2 },
+    serviceProvider: {
+      type: "education",
+      radius: 3
+    },
     production: { resource: "energy", amountPerCycle: 0, cycleSeconds: 30 }
   },
   park: {
@@ -88,6 +92,10 @@ export const BUILDINGS: Record<BuildingId, BuildingDefinition> = {
     constructionSeconds: 6,
     cost: { coins: 25 },
     landValueBonus: 8,
+    serviceProvider: {
+      type: "recreation",
+      radius: 2
+    },
     production: { resource: "energy", amountPerCycle: 1, cycleSeconds: 12 }
   },
   solarFarm: {

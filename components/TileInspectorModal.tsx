@@ -101,6 +101,9 @@ export const TileInspectorModal = () => {
           <p>Land Tier: {landTier}</p>
           <p>Pollution: {stat(tile.pollution)}</p>
           <p>Happiness: {stat(tile.happiness)}</p>
+          <p className="mt-2 font-medium">Services</p>
+          <p>{tile.serviceCoverage.education ? "✔" : "✘"} School coverage</p>
+          <p>{tile.serviceCoverage.recreation ? "✔" : "✘"} Park coverage</p>
         </div>
 
         {building ? (

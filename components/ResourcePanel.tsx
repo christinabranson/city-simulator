@@ -95,6 +95,10 @@ export const ResourcePanel = () => {
         {cityMetrics.landValueTierCounts.basic} | Suburban: {cityMetrics.landValueTierCounts.suburban} |
         High Value: {cityMetrics.landValueTierCounts.highValue}
       </div>
+      <div className="mt-2 rounded bg-slate-800 p-2 text-xs text-slate-300">
+        Service Coverage - School: {cityMetrics.serviceCoverageCounts.education} tiles | Park:{" "}
+        {cityMetrics.serviceCoverageCounts.recreation} tiles
+      </div>
     </section>
   );
 };

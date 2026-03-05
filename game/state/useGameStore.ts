@@ -39,7 +39,11 @@ const createDefaultTile = (x: number, y: number): Tile => ({
   lastProducedAt: null,
   pollution: 0,
   landValue: 50,
-  happiness: 60
+  happiness: 60,
+  serviceCoverage: {
+    education: false,
+    recreation: false
+  }
 });
 
 const makeTiles = (width: number, height: number): Tile[] => {
@@ -73,6 +77,10 @@ const createInitialSnapshot = (): GameStateSnapshot => ({
       residential: 0,
       commercial: 0,
       industrial: 0
+    },
+    serviceCoverageCounts: {
+      education: 0,
+      recreation: 0
     }
   }
 });
@@ -103,7 +111,11 @@ const normalizeSnapshot = (
       inactiveReason: maybeLoadedTile.inactiveReason ?? null,
       pollution: maybeLoadedTile.pollution ?? 0,
       landValue: maybeLoadedTile.landValue ?? 50,
-      happiness: maybeLoadedTile.happiness ?? 60
+      happiness: maybeLoadedTile.happiness ?? 60,
+      serviceCoverage: {
+        education: maybeLoadedTile.serviceCoverage?.education ?? false,
+        recreation: maybeLoadedTile.serviceCoverage?.recreation ?? false
+      }
     };
   });
 
@@ -124,6 +136,10 @@ const normalizeSnapshot = (
       demand: {
         ...fallback.cityMetrics.demand,
         ...(loaded.cityMetrics?.demand ?? {})
+      },
+      serviceCoverageCounts: {
+        ...fallback.cityMetrics.serviceCoverageCounts,
+        ...(loaded.cityMetrics?.serviceCoverageCounts ?? {})
       }
     }
   };

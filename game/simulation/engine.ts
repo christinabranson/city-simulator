@@ -15,7 +15,10 @@ export interface SimulationResult {
 const cloneSnapshot = (snapshot: GameStateSnapshot): GameStateSnapshot => ({
   ...snapshot,
   resources: { ...snapshot.resources },
-  tiles: snapshot.tiles.map((tile) => ({ ...tile })),
+  tiles: snapshot.tiles.map((tile) => ({
+    ...tile,
+    serviceCoverage: { ...tile.serviceCoverage }
+  })),
   gifts: [...snapshot.gifts],
   cityMetrics: { ...snapshot.cityMetrics }
 });
@@ -221,6 +224,45 @@ const calculateDemand = (
   return { residential, commercial, industrial };
 };
 
+const calculateServiceCoverage = (
+  next: GameStateSnapshot
+): { education: number; recreation: number } => {
+  for (const tile of next.tiles) {
+    tile.serviceCoverage.education = false;
+    tile.serviceCoverage.recreation = false;
+  }
+
+  for (const sourceTile of next.tiles) {
+    if (!sourceTile.constructed || !sourceTile.buildingId || !sourceTile.isActive) {
+      continue;
+    }
+    const provider = BUILDINGS[sourceTile.buildingId].serviceProvider;
+    if (!provider) {
+      continue;
+    }
+
+    for (const targetTile of next.tiles) {
+      const distance = Math.abs(sourceTile.x - targetTile.x) + Math.abs(sourceTile.y - targetTile.y);
+      if (distance <= provider.radius) {
+        targetTile.serviceCoverage[provider.type] = true;
+      }
+    }
+  }
+
+  return next.tiles.reduce(
+    (acc, tile) => {
+      if (tile.serviceCoverage.education) {
+        acc.education += 1;
+      }
+      if (tile.serviceCoverage.recreation) {
+        acc.recreation += 1;
+      }
+      return acc;
+    },
+    { education: 0, recreation: 0 }
+  );
+};
+
 const calculateLandValueAndHappiness = (
   next: GameStateSnapshot,
   unemploymentRate: number
@@ -235,6 +277,8 @@ const calculateLandValueAndHappiness = (
       50 +
       nearbyRecreation * 6 +
       nearbyCivic * 4 +
+      (tile.serviceCoverage.recreation ? 6 : 0) +
+      (tile.serviceCoverage.education ? 3 : 0) +
       (building?.landValueBonus ?? 0) -
       nearbyIndustrial * 5 -
       tile.pollution * 0.6;
@@ -244,6 +288,8 @@ const calculateLandValueAndHappiness = (
       55 +
       nearbyRecreation * 7 +
       nearbyCivic * 6 +
+      (tile.serviceCoverage.recreation ? 8 : 0) +
+      (tile.serviceCoverage.education ? 6 : 0) +
       tile.landValue * 0.2 -
       nearbyIndustrial * 4 -
       tile.pollution * 1.1;
@@ -273,11 +319,13 @@ export const runSimulation = (
 
   const initialLaborStats = calculatePopulationAndJobs(next);
   spreadPollution(next, elapsedMinutes);
+  calculateServiceCoverage(next);
   calculateLandValueAndHappiness(next, initialLaborStats.unemploymentRate);
 
   const { population, jobs, unemploymentRate, commercialJobs, industrialJobs } =
     calculatePopulationAndJobs(next);
   const demand = calculateDemand(population, jobs, commercialJobs, industrialJobs);
+  const serviceCoverageCounts = calculateServiceCoverage(next);
   calculateLandValueAndHappiness(next, unemploymentRate);
   collectTaxes(next, population, jobs, elapsedMinutes);
 
@@ -289,6 +337,7 @@ export const runSimulation = (
     averageLandValue,
     landValueTierCounts,
     demand,
+    serviceCoverageCounts,
     averageHappiness:
       next.tiles.length > 0
         ? Math.round(next.tiles.reduce((sum, tile) => sum + tile.happiness, 0) / next.tiles.length)
