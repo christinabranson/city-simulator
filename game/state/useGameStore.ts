@@ -301,6 +301,7 @@ interface UiState {
 
 interface GameActions {
   hydrateFromStorage: () => void;
+  hydrateFromSnapshot: (snapshot: GameStateSnapshot) => void;
   selectBuilding: (buildingId: BuildingId | null) => void;
   selectRoadTool: (roadType: Exclude<RoadType, "none"> | null) => void;
   placeBuilding: (x: number, y: number) => void;
@@ -354,6 +355,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
       const buildingName = tile.buildingId ? BUILDINGS[tile.buildingId].name : "Building";
       get().pushToast("success", `${buildingName} construction complete.`);
     }
+  },
+
+  hydrateFromSnapshot: (snapshot) => {
+    const normalized = normalizeSnapshot(snapshot, createInitialSnapshot());
+    const simulated = runSimulation(normalized, Date.now()).snapshot;
+    persist(simulated);
+    set({
+      ...simulated,
+      hydrated: true
+    });
   },
 
   selectBuilding: (buildingId) => {

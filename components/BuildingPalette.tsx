@@ -1,12 +1,60 @@
 import { useMemo, useState } from "react";
 
 import { BUILDING_LIST } from "@/game/models/buildings";
-import { ROAD_COSTS } from "@/game/models/pricing";
+import { ROI_RESOURCE_WEIGHTS, ROI_VALUE_SCORE_WEIGHTS, ROAD_COSTS } from "@/game/models/pricing";
 import { useGameStore } from "@/game/state/useGameStore";
+import type { BuildingDefinition, ResourceType } from "@/types/game";
 
 type BuildTab = "utility" | "residential" | "commercial" | "industry";
 const COMPARABLE_CATEGORIES = new Set(["residential", "commercial", "industrial"]);
 const formatSigned = (value: number): string => `${value >= 0 ? "+" : ""}${value}`;
+
+const toCoinEquivalent = (cost: BuildingDefinition["cost"]): number =>
+  Object.entries(cost).reduce((sum, [resource, amount]) => {
+    return sum + (ROI_RESOURCE_WEIGHTS[resource as ResourceType] ?? 0) * (amount ?? 0);
+  }, 0);
+
+const formatTime = (seconds: number): string => {
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    return "n/a";
+  }
+  if (seconds < 60) {
+    return `${Math.ceil(seconds)}s`;
+  }
+  return `${(seconds / 60).toFixed(1)}m`;
+};
+
+const getCoinPaybackTime = (building: BuildingDefinition): string => {
+  if (building.production.resource !== "coins") {
+    return "n/a (non-coin producer)";
+  }
+  const coinCost = building.cost.coins ?? 0;
+  const coinsPerSecond = building.production.amountPerCycle / building.production.cycleSeconds;
+  if (coinCost <= 0 || coinsPerSecond <= 0) {
+    return "n/a";
+  }
+  return formatTime(coinCost / coinsPerSecond);
+};
+
+const getValueScore = (building: BuildingDefinition): number => {
+  const costEquivalent = toCoinEquivalent(building.cost);
+  if (costEquivalent <= 0) {
+    return 0;
+  }
+  const outputPerMinute =
+    ROI_RESOURCE_WEIGHTS[building.production.resource] *
+    building.production.amountPerCycle *
+    (60 / building.production.cycleSeconds);
+  const utilityScore =
+    (building.population ?? 0) * ROI_VALUE_SCORE_WEIGHTS.population +
+    (building.jobs ?? 0) * ROI_VALUE_SCORE_WEIGHTS.jobs +
+    (building.landValueBonus ?? 0) * ROI_VALUE_SCORE_WEIGHTS.landValueBonus +
+    (building.serviceProvider ? building.serviceProvider.radius * ROI_VALUE_SCORE_WEIGHTS.serviceRadius : 0);
+  const pollutionPenalty = (building.pollution ?? 0) * ROI_VALUE_SCORE_WEIGHTS.pollutionPenalty;
+  return Math.round(
+    ((outputPerMinute + utilityScore - pollutionPenalty) / costEquivalent) * ROI_VALUE_SCORE_WEIGHTS.scale
+  );
+};
 
 export const BuildingPalette = () => {
   const selectedBuildingId = useGameStore((state) => state.selectedBuildingId);
@@ -130,6 +178,8 @@ export const BuildingPalette = () => {
           const populationDelta = (building.population ?? 0) - (baseline?.population ?? 0);
           const jobsDelta = (building.jobs ?? 0) - (baseline?.jobs ?? 0);
           const productionDelta = building.production.amountPerCycle - (baseline?.production.amountPerCycle ?? 0);
+          const payback = getCoinPaybackTime(building);
+          const valueScore = getValueScore(building);
           return (
             <button
               key={building.id}
@@ -156,6 +206,9 @@ export const BuildingPalette = () => {
               </div>
               <div className="mt-1 text-[11px] text-slate-300">
                 Impact: Pop {building.population ?? 0} | Jobs {building.jobs ?? 0} | Output {outputPerCycle}
+              </div>
+              <div className="mt-1 text-[11px] text-emerald-200">
+                ROI: Payback {payback} | Value score {formatSigned(valueScore)}
               </div>
               {showComparison ? (
                 <div className="mt-1 text-[11px] text-sky-200">

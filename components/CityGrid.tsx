@@ -93,6 +93,18 @@ export const CityGrid = () => {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
+      const target = event.target as HTMLElement | null;
+      const tag = target?.tagName?.toLowerCase();
+      const isTypingContext =
+        tag === "input" ||
+        tag === "textarea" ||
+        tag === "select" ||
+        Boolean(target?.isContentEditable) ||
+        target?.getAttribute("role") === "textbox";
+      if (isTypingContext || event.metaKey || event.ctrlKey || event.altKey) {
+        return;
+      }
+
       const key = event.key.toLowerCase();
       if (!["l", "p", "h", "s"].includes(key)) {
         return;

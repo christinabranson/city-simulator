@@ -17,7 +17,7 @@ export const BUILDINGS: Record<BuildingId, BuildingDefinition> = {
       minLandValue: 45,
       minHappiness: 55
     },
-    production: { resource: "coins", amountPerCycle: 2, cycleSeconds: 10 }
+    production: { resource: "coins", amountPerCycle: 2, cycleSeconds: 60 }
   },
   townhouse: {
     id: "townhouse",
@@ -34,7 +34,7 @@ export const BUILDINGS: Record<BuildingId, BuildingDefinition> = {
       minLandValue: 70,
       minHappiness: 65
     },
-    production: { resource: "coins", amountPerCycle: 3, cycleSeconds: 10 }
+    production: { resource: "coins", amountPerCycle: 3, cycleSeconds: 60 }
   },
   apartment: {
     id: "apartment",
@@ -45,7 +45,7 @@ export const BUILDINGS: Record<BuildingId, BuildingDefinition> = {
     constructionSeconds: 10,
     cost: BUILDING_COSTS.apartment,
     population: 14,
-    production: { resource: "coins", amountPerCycle: 5, cycleSeconds: 10 }
+    production: { resource: "coins", amountPerCycle: 5, cycleSeconds: 60 }
   },
   shop: {
     id: "shop",
@@ -62,7 +62,7 @@ export const BUILDINGS: Record<BuildingId, BuildingDefinition> = {
       minLandValue: 60,
       minHappiness: 60
     },
-    production: { resource: "coins", amountPerCycle: 6, cycleSeconds: 20 }
+    production: { resource: "coins", amountPerCycle: 6, cycleSeconds: 60 }
   },
   supermarket: {
     id: "supermarket",
@@ -73,7 +73,7 @@ export const BUILDINGS: Record<BuildingId, BuildingDefinition> = {
     constructionSeconds: 14,
     cost: BUILDING_COSTS.supermarket,
     jobs: 9,
-    production: { resource: "coins", amountPerCycle: 14, cycleSeconds: 22 }
+    production: { resource: "coins", amountPerCycle: 14, cycleSeconds: 60 }
   },
   factory: {
     id: "factory",
@@ -91,7 +91,7 @@ export const BUILDINGS: Record<BuildingId, BuildingDefinition> = {
       minLandValue: 35,
       minHappiness: 40
     },
-    production: { resource: "coins", amountPerCycle: 10, cycleSeconds: 30 }
+    production: { resource: "coins", amountPerCycle: 10, cycleSeconds: 60 }
   },
   manufacturingPlant: {
     id: "manufacturingPlant",
@@ -103,7 +103,7 @@ export const BUILDINGS: Record<BuildingId, BuildingDefinition> = {
     cost: BUILDING_COSTS.manufacturingPlant,
     jobs: 16,
     pollution: 20,
-    production: { resource: "coins", amountPerCycle: 22, cycleSeconds: 34 }
+    production: { resource: "coins", amountPerCycle: 22, cycleSeconds: 60 }
   },
   school: {
     id: "school",
@@ -123,7 +123,7 @@ export const BUILDINGS: Record<BuildingId, BuildingDefinition> = {
       type: "education",
       radius: 3
     },
-    production: { resource: "energy", amountPerCycle: 0, cycleSeconds: 30 }
+    production: { resource: "energy", amountPerCycle: 0, cycleSeconds: 60 }
   },
   college: {
     id: "college",
@@ -138,7 +138,7 @@ export const BUILDINGS: Record<BuildingId, BuildingDefinition> = {
       radius: 5
     },
     jobs: 6,
-    production: { resource: "energy", amountPerCycle: 2, cycleSeconds: 26 }
+    production: { resource: "energy", amountPerCycle: 2, cycleSeconds: 60 }
   },
   park: {
     id: "park",
@@ -153,7 +153,7 @@ export const BUILDINGS: Record<BuildingId, BuildingDefinition> = {
       type: "recreation",
       radius: 2
     },
-    production: { resource: "energy", amountPerCycle: 1, cycleSeconds: 12 }
+    production: { resource: "energy", amountPerCycle: 1, cycleSeconds: 60 }
   },
   waterPump: {
     id: "waterPump",
@@ -164,7 +164,7 @@ export const BUILDINGS: Record<BuildingId, BuildingDefinition> = {
     constructionSeconds: 10,
     cost: BUILDING_COSTS.waterPump,
     requiresAdjacentLandmark: "lake",
-    production: { resource: "water", amountPerCycle: 6, cycleSeconds: 18 }
+    production: { resource: "water", amountPerCycle: 6, cycleSeconds: 60 }
   },
   hydroPlant: {
     id: "hydroPlant",
@@ -175,7 +175,7 @@ export const BUILDINGS: Record<BuildingId, BuildingDefinition> = {
     constructionSeconds: 14,
     cost: BUILDING_COSTS.hydroPlant,
     requiresAdjacentLandmark: "lake",
-    production: { resource: "energy", amountPerCycle: 10, cycleSeconds: 24 }
+    production: { resource: "energy", amountPerCycle: 10, cycleSeconds: 60 }
   },
   solarFarm: {
     id: "solarFarm",
@@ -186,7 +186,7 @@ export const BUILDINGS: Record<BuildingId, BuildingDefinition> = {
     constructionSeconds: 8,
     cost: BUILDING_COSTS.solarFarm,
     jobs: 2,
-    production: { resource: "energy", amountPerCycle: 2, cycleSeconds: 8 }
+    production: { resource: "energy", amountPerCycle: 2, cycleSeconds: 60 }
   },
   warehouse: {
     id: "warehouse",
@@ -198,7 +198,7 @@ export const BUILDINGS: Record<BuildingId, BuildingDefinition> = {
     cost: BUILDING_COSTS.warehouse,
     jobs: 6,
     pollution: 8,
-    production: { resource: "coins", amountPerCycle: 8, cycleSeconds: 24 }
+    production: { resource: "coins", amountPerCycle: 8, cycleSeconds: 60 }
   }
 };
 

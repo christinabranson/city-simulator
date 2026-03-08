@@ -1,4 +1,4 @@
-import type { BuildingId, Cost, RoadType } from "@/types/game";
+import type { BuildingId, Cost, ResourceType, RoadType } from "@/types/game";
 
 export const BUILDING_COSTS: Record<BuildingId, Cost> = {
   house: { coins: 20 },
@@ -39,6 +39,21 @@ export const LAND_EXPANSION = {
   landmarkChance: 0.18,
   surveyCooldownMs: 45_000,
   resurveyCost: { coins: 18, energy: 1 } as Cost
+} as const;
+
+export const ROI_RESOURCE_WEIGHTS: Record<ResourceType, number> = {
+  coins: 1,
+  energy: 9,
+  water: 7
+};
+
+export const ROI_VALUE_SCORE_WEIGHTS = {
+  population: 3,
+  jobs: 2,
+  landValueBonus: 1.5,
+  serviceRadius: 8,
+  pollutionPenalty: 1.4,
+  scale: 100
 } as const;
 
 export const getLandExpansionCost = (currentWidth: number, currentHeight: number): Cost => {
