@@ -109,6 +109,15 @@ const getAdjacentCategoryCount = (
     return distance === 1;
   }).length;
 
+const getNearbyLandmarkCount = (tiles: Tile[], center: Tile, landmark: "lake", radius: number): number =>
+  tiles.filter((tile) => {
+    if (tile.landmark !== landmark) {
+      return false;
+    }
+    const distance = Math.abs(tile.x - center.x) + Math.abs(tile.y - center.y);
+    return distance > 0 && distance <= radius;
+  }).length;
+
 const processConstructionAndProduction = (
   next: GameStateSnapshot,
   now: number,
@@ -258,14 +267,30 @@ const calculateDemand = (
   population: number,
   jobs: number,
   commercialJobs: number,
-  industrialJobs: number
+  industrialJobs: number,
+  stage: "early" | "mid" | "late"
 ): { residential: number; commercial: number; industrial: number } => {
   const jobGap = jobs - population;
   const workerGap = population - jobs;
 
-  const residential = clamp(Math.round(jobGap * 7), -100, 100);
-  const commercial = clamp(Math.round(workerGap * 6 + (population - commercialJobs) * 3), -100, 100);
-  const industrial = clamp(Math.round(workerGap * 5 + (population - industrialJobs) * 2), -100, 100);
+  const tuning =
+    stage === "early"
+      ? { res: 8, com: 6, ind: 5 }
+      : stage === "mid"
+        ? { res: 6, com: 5, ind: 4 }
+        : { res: 5, com: 4, ind: 3 };
+
+  const residential = clamp(Math.round(jobGap * tuning.res), -100, 100);
+  const commercial = clamp(
+    Math.round(workerGap * tuning.com + (population - commercialJobs) * (stage === "late" ? 2 : 3)),
+    -100,
+    100
+  );
+  const industrial = clamp(
+    Math.round(workerGap * tuning.ind + (population - industrialJobs) * (stage === "early" ? 2 : 1)),
+    -100,
+    100
+  );
 
   return { residential, commercial, industrial };
 };
@@ -332,6 +357,7 @@ const calculateLandValueAndHappiness = (
     const adjacentRecreation = getAdjacentCategoryCount(next.tiles, tile, "recreation");
     const adjacentIndustrial = getAdjacentCategoryCount(next.tiles, tile, "industrial");
     const adjacentResidential = getAdjacentCategoryCount(next.tiles, tile, "residential");
+    const nearbyLakes = getNearbyLandmarkCount(next.tiles, tile, "lake", 2);
     const building = tile.buildingId && tile.isActive ? BUILDINGS[tile.buildingId] : null;
     const roadAccessQuality = tile.isActive ? getRoadAccessQuality(tile, next.tiles, indexByCoordinate) : 0;
 
@@ -341,6 +367,7 @@ const calculateLandValueAndHappiness = (
       nearbyCivic * 4 +
       (tile.serviceCoverage.recreation ? 6 : 0) +
       (tile.serviceCoverage.education ? 3 : 0) +
+      nearbyLakes * 5 +
       (building?.landValueBonus ?? 0) -
       nearbyIndustrial * 5 -
       tile.pollution * 0.6;
@@ -359,6 +386,7 @@ const calculateLandValueAndHappiness = (
       nearbyCivic * 6 +
       (tile.serviceCoverage.recreation ? 8 : 0) +
       (tile.serviceCoverage.education ? 6 : 0) +
+      nearbyLakes * 4 +
       roadAccessQuality * 3 +
       tile.landValue * 0.2 -
       nearbyIndustrial * 4 -
@@ -379,9 +407,26 @@ const calculateLandValueAndHappiness = (
   }
 };
 
-const collectTaxes = (next: GameStateSnapshot, population: number, jobs: number, elapsedMinutes: number): void => {
+const getProgressionStage = (population: number, area: number): "early" | "mid" | "late" => {
+  if (population >= 160 || area >= 180) {
+    return "late";
+  }
+  if (population >= 70 || area >= 110) {
+    return "mid";
+  }
+  return "early";
+};
+
+const collectTaxes = (
+  next: GameStateSnapshot,
+  population: number,
+  jobs: number,
+  elapsedMinutes: number,
+  stage: "early" | "mid" | "late"
+): void => {
   const employedCitizens = Math.min(population, jobs);
-  const taxIncome = Math.floor(employedCitizens * 0.05 * elapsedMinutes);
+  const rate = stage === "early" ? 0.04 : stage === "mid" ? 0.055 : 0.07;
+  const taxIncome = Math.floor(employedCitizens * rate * elapsedMinutes);
   if (taxIncome > 0) {
     next.resources.coins += taxIncome;
   }
@@ -403,10 +448,11 @@ export const runSimulation = (
 
   const { population, jobs, unemploymentRate, commercialJobs, industrialJobs } =
     calculatePopulationAndJobs(next);
-  const demand = calculateDemand(population, jobs, commercialJobs, industrialJobs);
+  const stage = getProgressionStage(population, next.gridWidth * next.gridHeight);
+  const demand = calculateDemand(population, jobs, commercialJobs, industrialJobs, stage);
   const serviceCoverageCounts = calculateServiceCoverage(next);
   calculateLandValueAndHappiness(next, unemploymentRate);
-  collectTaxes(next, population, jobs, elapsedMinutes);
+  collectTaxes(next, population, jobs, elapsedMinutes, stage);
 
   const { averageLandValue, landValueTierCounts } = summarizeLandValue(next.tiles);
   next.cityMetrics = {
@@ -417,6 +463,7 @@ export const runSimulation = (
     landValueTierCounts,
     demand,
     serviceCoverageCounts,
+    progressionStage: stage,
     averageHappiness:
       next.tiles.length > 0
         ? Math.round(next.tiles.reduce((sum, tile) => sum + tile.happiness, 0) / next.tiles.length)

@@ -30,9 +30,16 @@ export const ToastStack = () => {
       {toasts.map((toast) => (
         <div
           key={toast.id}
-          className={`pointer-events-auto rounded border px-3 py-2 text-sm shadow-lg ${toneByType[toast.type]}`}
+          className={`pointer-events-auto flex items-start justify-between gap-2 rounded border px-3 py-2 text-sm shadow-lg ${toneByType[toast.type]}`}
         >
-          {toast.message}
+          <span>{toast.message}</span>
+          <button
+            type="button"
+            onClick={() => dismissToast(toast.id)}
+            className="rounded px-1 text-xs opacity-80 hover:opacity-100"
+          >
+            ×
+          </button>
         </div>
       ))}
     </div>

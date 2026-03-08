@@ -1,9 +1,11 @@
-export type ResourceType = "coins" | "energy";
+export type ResourceType = "coins" | "energy" | "water";
 export type DemandType = "residential" | "commercial" | "industrial";
 export type LandValueTier = "slum" | "basic" | "suburban" | "highValue";
 export type RoadType = "none" | "road" | "heavyRoad" | "highway";
 export type ServiceType = "education" | "recreation";
 export type ToastType = "success" | "info" | "warning" | "error";
+export type LandmarkType = "lake";
+export type ProgressionStage = "early" | "mid" | "late";
 export type BuildingCategory =
   | "residential"
   | "commercial"
@@ -16,9 +18,14 @@ export type BuildingId =
   | "townhouse"
   | "apartment"
   | "shop"
+  | "supermarket"
   | "factory"
+  | "manufacturingPlant"
   | "school"
+  | "college"
   | "park"
+  | "waterPump"
+  | "hydroPlant"
   | "solarFarm"
   | "warehouse";
 
@@ -48,6 +55,7 @@ export interface BuildingDefinition {
     type: ServiceType;
     radius: number;
   };
+  requiresAdjacentLandmark?: LandmarkType;
   production: {
     resource: ResourceType;
     amountPerCycle: number;
@@ -60,6 +68,7 @@ export interface Tile {
   y: number;
   buildingId: BuildingId | null;
   roadType: RoadType;
+  landmark: LandmarkType | null;
   constructed: boolean;
   isActive: boolean;
   inactiveReason: string | null;
@@ -95,6 +104,7 @@ export interface GameStateSnapshot {
     landValueTierCounts: Record<LandValueTier, number>;
     demand: Record<DemandType, number>;
     serviceCoverageCounts: Record<ServiceType, number>;
+    progressionStage: ProgressionStage;
   };
 }
 

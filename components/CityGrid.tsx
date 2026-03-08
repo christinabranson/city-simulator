@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { BUILDINGS } from "@/game/models/buildings";
 import { useGameStore } from "@/game/state/useGameStore";
@@ -30,6 +30,8 @@ type OverlayMode =
 export const CityGrid = () => {
   const tiles = useGameStore((state) => state.tiles);
   const width = useGameStore((state) => state.gridWidth);
+  const height = useGameStore((state) => state.gridHeight);
+  const plannedExpansion = useGameStore((state) => state.plannedExpansion);
   const selectedBuildingId = useGameStore((state) => state.selectedBuildingId);
   const selectedRoadType = useGameStore((state) => state.selectedRoadType);
   const movingBuilding = useGameStore((state) => state.movingBuilding);
@@ -39,6 +41,55 @@ export const CityGrid = () => {
   const toggleRoad = useGameStore((state) => state.toggleRoad);
   const inspectTile = useGameStore((state) => state.inspectTile);
   const [overlayMode, setOverlayMode] = useState<OverlayMode>("none");
+  const [placementHint, setPlacementHint] = useState<string | null>(null);
+
+  const existingTileMap = useMemo(
+    () => new Map(tiles.map((tile) => [`${tile.x},${tile.y}`, tile])),
+    [tiles]
+  );
+  const plannedLandmarkMap = useMemo(
+    () =>
+      new Map(
+        (plannedExpansion?.tiles ?? []).map((tile) => [`${tile.x},${tile.y}`, tile.landmark ?? null])
+      ),
+    [plannedExpansion]
+  );
+  const displayWidth = plannedExpansion?.nextWidth ?? width;
+  const displayHeight = plannedExpansion?.nextHeight ?? height;
+
+  const renderSlots = useMemo(
+    () =>
+      Array.from({ length: displayWidth * displayHeight }, (_, index) => {
+        const x = index % displayWidth;
+        const y = Math.floor(index / displayWidth);
+        const key = `${x},${y}`;
+        const existing = existingTileMap.get(key);
+        if (existing) {
+          return { tile: existing, isPlanned: false };
+        }
+        return {
+          tile: {
+            x,
+            y,
+            buildingId: null,
+            roadType: "none" as const,
+            landmark: plannedLandmarkMap.get(key) ?? null,
+            constructed: false,
+            isActive: true,
+            inactiveReason: null,
+            constructionStartedAt: null,
+            constructionCompleteAt: null,
+            lastProducedAt: null,
+            pollution: 0,
+            landValue: 50,
+            happiness: 60,
+            serviceCoverage: { education: false, recreation: false }
+          },
+          isPlanned: true
+        };
+      }),
+    [displayWidth, displayHeight, existingTileMap, plannedLandmarkMap]
+  );
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
@@ -125,8 +176,29 @@ export const CityGrid = () => {
     if (tile.roadType !== "none") {
       return { canPlace: false, reason: "Blocked: remove road first." };
     }
+    if (tile.landmark) {
+      return { canPlace: false, reason: "Blocked: landmark tile cannot be built on." };
+    }
     if (!hasAdjacentRoad(tile.x, tile.y)) {
       return { canPlace: false, reason: "Blocked: requires adjacent road." };
+    }
+    const definition = BUILDINGS[selectedBuildingId];
+    if (definition.requiresAdjacentLandmark) {
+      const neighbors = [
+        [tile.x, tile.y - 1],
+        [tile.x + 1, tile.y],
+        [tile.x, tile.y + 1],
+        [tile.x - 1, tile.y]
+      ];
+      const hasLandmark = neighbors.some(([nx, ny]) =>
+        tiles.some((candidate) => candidate.x === nx && candidate.y === ny && candidate.landmark === definition.requiresAdjacentLandmark)
+      );
+      if (!hasLandmark) {
+        return {
+          canPlace: false,
+          reason: `Blocked: requires adjacent ${definition.requiresAdjacentLandmark}.`
+        };
+      }
     }
     if (!canAffordSelectedBuilding) {
       return { canPlace: false, reason: "Blocked: insufficient resources." };
@@ -175,7 +247,11 @@ export const CityGrid = () => {
     return null;
   };
 
-  const onTileClick = (x: number, y: number): void => {
+  const onTileClick = (x: number, y: number, isPlanned = false): void => {
+    if (isPlanned) {
+      setPlacementHint("Surveyed tile. Buy land to unlock this area.");
+      return;
+    }
     if (movingBuilding) {
       placeMovedBuilding(x, y);
       return;
@@ -187,9 +263,17 @@ export const CityGrid = () => {
     }
 
     if (selectedBuildingId) {
+      const tile = tiles.find((candidate) => candidate.x === x && candidate.y === y);
+      const preview = tile ? getBuildPreview(tile) : null;
+      if (!preview?.canPlace) {
+        setPlacementHint(preview?.reason ?? "Blocked.");
+        return;
+      }
+      setPlacementHint(`Placed ${BUILDINGS[selectedBuildingId].name}.`);
       placeBuilding(x, y);
       return;
     }
+    setPlacementHint(null);
     inspectTile(x, y);
   };
 
@@ -233,17 +317,38 @@ export const CityGrid = () => {
         </span>
         <span className="text-slate-400">Hotkeys: L land, P pollution, H happiness, S service</span>
       </div>
+      {selectedBuildingId ? (
+        <p className="mb-3 rounded bg-slate-800 px-2 py-1 text-xs text-slate-200">
+          Placement: {placementHint ?? "Click a tile to place. Red tiles are blocked."}
+        </p>
+      ) : null}
       <div
         className="grid gap-2"
         style={{
-          gridTemplateColumns: `repeat(${width}, minmax(0, 1fr))`
+          gridTemplateColumns: `repeat(${displayWidth}, minmax(0, 1fr))`
         }}
       >
-        {tiles.map((tile) => {
+        {renderSlots.map(({ tile, isPlanned }) => {
           const movePreview = getMovePreview(tile.x, tile.y);
           const buildPreview = getBuildPreview(tile);
           const serviceOverlay = getServiceOverlayOpacity(tile);
           const singleOverlay = getSingleOverlayStyle(tile);
+          if (isPlanned) {
+            return (
+              <button
+                key={`${tile.x}-${tile.y}`}
+                type="button"
+                onClick={() => onTileClick(tile.x, tile.y, true)}
+                className="relative aspect-square cursor-not-allowed rounded border border-dashed border-sky-600 bg-sky-950/40 text-[10px] text-sky-200"
+              >
+                {tile.landmark === "lake" ? (
+                  <span className="relative z-10 text-base">🌊</span>
+                ) : (
+                  <span className="relative z-10">+land</span>
+                )}
+              </button>
+            );
+          }
           if (!tile.buildingId) {
             if (tile.roadType !== "none") {
               const style = roadStyle(tile.roadType);
@@ -255,7 +360,6 @@ export const CityGrid = () => {
                   className={`relative aspect-square rounded border border-slate-700 text-xs text-slate-100 ${
                     buildPreview ? (buildPreview.canPlace ? "cursor-copy" : "cursor-not-allowed") : ""
                   } ${style.className}`}
-                  title={buildPreview?.reason ?? undefined}
                 >
                   <span
                     className="pointer-events-none absolute inset-0 rounded"
@@ -297,6 +401,18 @@ export const CityGrid = () => {
                 </button>
               );
             }
+            if (tile.landmark === "lake") {
+              return (
+                <button
+                  key={`${tile.x}-${tile.y}`}
+                  type="button"
+                  onClick={() => onTileClick(tile.x, tile.y)}
+                  className="relative aspect-square cursor-not-allowed rounded border border-cyan-700 bg-cyan-700/60 text-xs text-cyan-100"
+                >
+                  <span className="relative z-10 text-base">🌊</span>
+                </button>
+              );
+            }
             return (
               <button
                 key={`${tile.x}-${tile.y}`}
@@ -305,7 +421,6 @@ export const CityGrid = () => {
                 className={`relative aspect-square rounded border border-slate-700 bg-slate-800 text-xs text-slate-300 hover:bg-slate-700 ${
                   buildPreview ? (buildPreview.canPlace ? "cursor-copy" : "cursor-not-allowed") : ""
                 }`}
-                title={buildPreview?.reason ?? undefined}
               >
                 <span
                   className="pointer-events-none absolute inset-0 rounded"
@@ -365,7 +480,6 @@ export const CityGrid = () => {
                 className={`relative aspect-square rounded border border-slate-700 text-center text-xs ${
                   buildPreview ? "cursor-not-allowed" : ""
                 } ${building.colorClass}`}
-                title={buildPreview?.reason ?? undefined}
             >
                 <span
                   className="pointer-events-none absolute inset-0 rounded"

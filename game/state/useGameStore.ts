@@ -2,7 +2,7 @@ import { create } from "zustand";
 
 import { BUILDINGS } from "@/game/models/buildings";
 import { getScaledCost } from "@/game/models/costs";
-import { MOVE_COST_RATIO, ROAD_COSTS } from "@/game/models/economy";
+import { getLandExpansionCost, LAND_EXPANSION, MOVE_COST_RATIO, ROAD_COSTS } from "@/game/models/pricing";
 import { MOCK_CITIES } from "@/game/models/mockCities";
 import { loadSnapshot, saveSnapshot } from "@/game/persistence/localStorage";
 import { runSimulation } from "@/game/simulation/engine";
@@ -12,6 +12,8 @@ import type {
   GameStateSnapshot,
   GiftLogEntry,
   LandValueTier,
+  LandmarkType,
+  ProgressionStage,
   ResourceType,
   RoadType,
   ToastMessage,
@@ -33,6 +35,7 @@ const createDefaultTile = (x: number, y: number): Tile => ({
   y,
   buildingId: null,
   roadType: "none",
+  landmark: null,
   constructed: false,
   isActive: true,
   inactiveReason: null,
@@ -63,7 +66,8 @@ const createInitialSnapshot = (): GameStateSnapshot => ({
   gridHeight: GRID_HEIGHT,
   resources: {
     coins: 120,
-    energy: 10
+    energy: 10,
+    water: 6
   },
   tiles: makeTiles(GRID_WIDTH, GRID_HEIGHT),
   lastSimulatedAt: Date.now(),
@@ -83,7 +87,8 @@ const createInitialSnapshot = (): GameStateSnapshot => ({
     serviceCoverageCounts: {
       education: 0,
       recreation: 0
-    }
+    },
+    progressionStage: "early"
   }
 });
 
@@ -109,6 +114,7 @@ const normalizeSnapshot = (
       ...maybeLoadedTile,
       buildingId: hasValidBuilding ? maybeLoadedTile.buildingId : null,
       roadType: maybeLoadedTile.roadType ?? "none",
+      landmark: maybeLoadedTile.landmark ?? null,
       isActive: maybeLoadedTile.isActive ?? true,
       inactiveReason: maybeLoadedTile.inactiveReason ?? null,
       pollution: maybeLoadedTile.pollution ?? 0,
@@ -142,7 +148,8 @@ const normalizeSnapshot = (
       serviceCoverageCounts: {
         ...fallback.cityMetrics.serviceCoverageCounts,
         ...(loaded.cityMetrics?.serviceCoverageCounts ?? {})
-      }
+      },
+      progressionStage: (loaded.cityMetrics?.progressionStage as ProgressionStage | undefined) ?? "early"
     }
   };
 };
@@ -177,7 +184,10 @@ const deductCost = (snapshot: GameStateSnapshot, cost: Cost): GameStateSnapshot 
   const next = {
     ...snapshot,
     resources: { ...snapshot.resources },
-    tiles: snapshot.tiles.map((tile) => ({ ...tile })),
+    tiles: snapshot.tiles.map((tile) => ({
+      ...tile,
+      serviceCoverage: { ...tile.serviceCoverage }
+    })),
     gifts: [...snapshot.gifts]
   };
   for (const [resource, amount] of Object.entries(cost)) {
@@ -196,6 +206,18 @@ const hasAdjacentRoad = (tiles: Tile[], x: number, y: number): boolean => {
   return neighbors.some(([nx, ny]) => tiles.some((tile) => tile.x === nx && tile.y === ny && tile.roadType !== "none"));
 };
 
+const hasAdjacentLandmark = (tiles: Tile[], x: number, y: number, landmark: LandmarkType): boolean => {
+  const neighbors = [
+    [x, y - 1],
+    [x + 1, y],
+    [x, y + 1],
+    [x - 1, y]
+  ];
+  return neighbors.some(([nx, ny]) =>
+    tiles.some((tile) => tile.x === nx && tile.y === ny && tile.landmark === landmark)
+  );
+};
+
 const getConstructedCompletions = (previousTiles: Tile[], nextTiles: Tile[]): Tile[] => {
   const previousByKey = new Map(previousTiles.map((tile) => [`${tile.x},${tile.y}`, tile]));
   return nextTiles.filter((tile) => {
@@ -207,6 +229,59 @@ const getConstructedCompletions = (previousTiles: Tile[], nextTiles: Tile[]): Ti
   });
 };
 
+interface PlannedExpansionTile {
+  x: number;
+  y: number;
+  landmark: LandmarkType | null;
+}
+
+interface PlannedExpansion {
+  nextWidth: number;
+  nextHeight: number;
+  cost: Cost;
+  tiles: PlannedExpansionTile[];
+}
+
+const createExpansionPlan = (snapshot: GameStateSnapshot): PlannedExpansion => {
+  const nextWidth = snapshot.gridWidth + LAND_EXPANSION.widthStep;
+  const nextHeight = snapshot.gridHeight + LAND_EXPANSION.heightStep;
+  const existingKeys = new Set(snapshot.tiles.map((tile) => `${tile.x},${tile.y}`));
+  const tiles: PlannedExpansionTile[] = [];
+  for (let y = 0; y < nextHeight; y += 1) {
+    for (let x = 0; x < nextWidth; x += 1) {
+      const key = `${x},${y}`;
+      if (existingKeys.has(key)) {
+        continue;
+      }
+      tiles.push({
+        x,
+        y,
+        landmark: Math.random() < LAND_EXPANSION.landmarkChance ? "lake" : null
+      });
+    }
+  }
+  return {
+    nextWidth,
+    nextHeight,
+    cost: getLandExpansionCost(snapshot.gridWidth, snapshot.gridHeight),
+    tiles
+  };
+};
+
+const applyExpansionPlan = (plan: PlannedExpansion): Tile[] =>
+  plan.tiles.map((plannedTile) => {
+    const base = createDefaultTile(plannedTile.x, plannedTile.y);
+    if (plannedTile.landmark === "lake") {
+      return {
+        ...base,
+        landmark: "lake",
+        landValue: Math.min(100, base.landValue + 12),
+        happiness: Math.min(100, base.happiness + 6)
+      };
+    }
+    return base;
+  });
+
 const persist = (snapshot: GameStateSnapshot): void => {
   saveSnapshot(snapshot);
 };
@@ -217,8 +292,10 @@ interface UiState {
   hydrated: boolean;
   activeNeighborCityId: string | null;
   nextAutoSimAt: number | null;
+  nextLandSurveyAt: number | null;
   inspectedTile: { x: number; y: number } | null;
   movingBuilding: { fromX: number; fromY: number; buildingId: BuildingId; moveCost: Cost } | null;
+  plannedExpansion: PlannedExpansion | null;
   toasts: ToastMessage[];
 }
 
@@ -228,6 +305,9 @@ interface GameActions {
   selectRoadTool: (roadType: Exclude<RoadType, "none"> | null) => void;
   placeBuilding: (x: number, y: number) => void;
   toggleRoad: (x: number, y: number) => void;
+  surveyLandExpansion: () => void;
+  clearLandSurvey: () => void;
+  expandLand: () => void;
   beginMoveTile: (x: number, y: number) => void;
   placeMovedBuilding: (x: number, y: number) => void;
   cancelMove: () => void;
@@ -252,8 +332,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
   hydrated: false,
   activeNeighborCityId: null,
   nextAutoSimAt: null,
+  nextLandSurveyAt: null,
   inspectedTile: null,
   movingBuilding: null,
+  plannedExpansion: null,
   toasts: [],
 
   hydrateFromStorage: () => {
@@ -291,7 +373,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const current = runSimulation(snapshotFromState(state), Date.now()).snapshot;
 
     const targetTile = current.tiles.find((tile) => tile.x === x && tile.y === y);
-    if (!targetTile || targetTile.buildingId || targetTile.roadType !== "none") {
+    if (!targetTile || targetTile.buildingId || targetTile.roadType !== "none" || targetTile.landmark) {
       set({ ...current });
       persist(current);
       get().pushToast("warning", "Cannot place building on an occupied tile.");
@@ -305,6 +387,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }
 
     const buildingId = state.selectedBuildingId;
+    const definition = BUILDINGS[buildingId];
+    if (
+      definition.requiresAdjacentLandmark &&
+      !hasAdjacentLandmark(current.tiles, x, y, definition.requiresAdjacentLandmark)
+    ) {
+      set({ ...current });
+      persist(current);
+      get().pushToast("warning", `Cannot place ${definition.name}: must be adjacent to ${definition.requiresAdjacentLandmark}.`);
+      return;
+    }
     if (!canAfford(current, buildingId)) {
       set({ ...current });
       persist(current);
@@ -313,7 +405,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }
 
     const now = Date.now();
-    const definition = BUILDINGS[buildingId];
     const afterCost = deductCost(current, definition.cost);
     const placedTiles = afterCost.tiles.map((tile) =>
       tile.x === x && tile.y === y
@@ -352,10 +443,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const now = Date.now();
     const current = runSimulation(snapshotFromState(state), now).snapshot;
     const tile = current.tiles.find((candidate) => candidate.x === x && candidate.y === y);
-    if (!tile || tile.buildingId) {
+    if (!tile || tile.buildingId || tile.landmark) {
       set({ ...current });
       persist(current);
-      get().pushToast("warning", "Roads can only be placed on empty tiles.");
+      get().pushToast("warning", "Roads can only be placed on clear tiles.");
       return;
     }
 
@@ -387,6 +478,90 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set({ ...simulated });
     persist(simulated);
     get().pushToast("info", nextRoadType === "none" ? "Road removed." : "Road updated.");
+  },
+
+  surveyLandExpansion: () => {
+    const state = get();
+    const now = Date.now();
+    const current = runSimulation(snapshotFromState(state), now).snapshot;
+    if (state.nextLandSurveyAt && now < state.nextLandSurveyAt) {
+      const remainingSeconds = Math.ceil((state.nextLandSurveyAt - now) / 1000);
+      set({ ...current });
+      persist(current);
+      get().pushToast("warning", `Survey cooldown active: ${remainingSeconds}s remaining.`);
+      return;
+    }
+
+    const isResurvey = Boolean(state.plannedExpansion);
+    if (isResurvey && !canAffordCost(current, LAND_EXPANSION.resurveyCost)) {
+      set({ ...current });
+      persist(current);
+      get().pushToast("error", "Insufficient resources to resurvey.");
+      return;
+    }
+
+    const afterSurveyCost = isResurvey ? deductCost(current, LAND_EXPANSION.resurveyCost) : current;
+    const plan = createExpansionPlan(afterSurveyCost);
+    const lakes = plan.tiles.filter((tile) => tile.landmark === "lake").length;
+    set({
+      ...afterSurveyCost,
+      plannedExpansion: plan,
+      nextLandSurveyAt: now + LAND_EXPANSION.surveyCooldownMs
+    });
+    persist(afterSurveyCost);
+    get().pushToast(
+      "info",
+      lakes > 0
+        ? `${isResurvey ? "Resurvey" : "Survey"} ready: +${plan.tiles.length} tiles, ${lakes} potential lake landmarks.`
+        : `${isResurvey ? "Resurvey" : "Survey"} ready: +${plan.tiles.length} tiles.`
+    );
+  },
+
+  clearLandSurvey: () => {
+    set({ plannedExpansion: null });
+    get().pushToast("info", "Land survey cleared.");
+  },
+
+  expandLand: () => {
+    const state = get();
+    const current = runSimulation(snapshotFromState(state), Date.now()).snapshot;
+    const expectedWidth = current.gridWidth + LAND_EXPANSION.widthStep;
+    const expectedHeight = current.gridHeight + LAND_EXPANSION.heightStep;
+    const expansionPlan =
+      state.plannedExpansion &&
+      state.plannedExpansion.nextWidth === expectedWidth &&
+      state.plannedExpansion.nextHeight === expectedHeight
+        ? state.plannedExpansion
+        : createExpansionPlan(current);
+
+    if (!canAffordCost(current, expansionPlan.cost)) {
+      set({ ...current });
+      persist(current);
+      get().pushToast("error", "Insufficient resources to buy more land.");
+      return;
+    }
+
+    const newTiles = applyExpansionPlan(expansionPlan);
+
+    const afterCost = deductCost(current, expansionPlan.cost);
+    const expandedSnapshot: GameStateSnapshot = {
+      ...afterCost,
+      gridWidth: expansionPlan.nextWidth,
+      gridHeight: expansionPlan.nextHeight,
+      tiles: [...afterCost.tiles, ...newTiles],
+      lastSimulatedAt: Date.now()
+    };
+    const simulated = runSimulation(expandedSnapshot, Date.now()).snapshot;
+    set({ ...simulated, plannedExpansion: null });
+    persist(simulated);
+
+    const lakes = expansionPlan.tiles.filter((tile) => tile.landmark === "lake").length;
+    get().pushToast(
+      "success",
+      lakes > 0
+        ? `Land expanded (+${newTiles.length} tiles). ${lakes} lake landmarks discovered.`
+        : `Land expanded (+${newTiles.length} tiles).`
+    );
   },
 
   beginMoveTile: (x, y) => {
@@ -436,6 +611,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       sourceTile.buildingId !== buildingId ||
       !destinationTile ||
       destinationTile.buildingId ||
+      destinationTile.landmark !== null ||
       destinationTile.roadType !== "none" ||
       !canAffordCost(current, moveCost)
     ) {
@@ -448,6 +624,19 @@ export const useGameStore = create<GameStore>((set, get) => ({
       set({ ...current, movingBuilding: null, inspectedTile: { x: fromX, y: fromY } });
       persist(current);
       get().pushToast("warning", "Move cancelled: destination needs adjacent road.");
+      return;
+    }
+    const movingDefinition = BUILDINGS[buildingId];
+    if (
+      movingDefinition.requiresAdjacentLandmark &&
+      !hasAdjacentLandmark(current.tiles, x, y, movingDefinition.requiresAdjacentLandmark)
+    ) {
+      set({ ...current, movingBuilding: null, inspectedTile: { x: fromX, y: fromY } });
+      persist(current);
+      get().pushToast(
+        "warning",
+        `Move cancelled: destination must be adjacent to ${movingDefinition.requiresAdjacentLandmark}.`
+      );
       return;
     }
 
@@ -615,16 +804,31 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   pushToast: (type, message, durationMs = 2600) => {
     set((state) => ({
-      toasts: [
-        ...state.toasts,
-        {
-          id: `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
-          type,
-          message,
-          createdAt: Date.now(),
-          durationMs
+      toasts: (() => {
+        const now = Date.now();
+        const existingIndex = state.toasts.findIndex(
+          (toast) => toast.type === type && toast.message === message && now - toast.createdAt < 1200
+        );
+        if (existingIndex >= 0) {
+          const updated = [...state.toasts];
+          updated[existingIndex] = {
+            ...updated[existingIndex],
+            createdAt: now,
+            durationMs
+          };
+          return updated.slice(-5);
         }
-      ].slice(-6)
+        return [
+          ...state.toasts,
+          {
+            id: `${now}-${Math.random().toString(16).slice(2, 8)}`,
+            type,
+            message,
+            createdAt: now,
+            durationMs
+          }
+        ].slice(-5);
+      })()
     }));
   },
 

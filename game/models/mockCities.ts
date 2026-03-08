@@ -17,6 +17,7 @@ const makeTiles = (width: number, height: number): Tile[] => {
         y,
         buildingId: null,
         roadType: "none",
+        landmark: null,
         constructed: false,
         isActive: true,
         inactiveReason: null,

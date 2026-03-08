@@ -10,7 +10,8 @@ export type ResourceCycleStats = Record<ResourceType, ResourceCycleStat>;
 
 const emptyStats = (): ResourceCycleStats => ({
   coins: { totalPerCycle: 0, nextCompletionAt: null },
-  energy: { totalPerCycle: 0, nextCompletionAt: null }
+  energy: { totalPerCycle: 0, nextCompletionAt: null },
+  water: { totalPerCycle: 0, nextCompletionAt: null }
 });
 
 export const getResourceCycleStats = (

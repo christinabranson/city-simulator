@@ -1,6 +1,6 @@
 import { BUILDINGS } from "@/game/models/buildings";
 import { getScaledCost } from "@/game/models/costs";
-import { MOVE_COST_RATIO } from "@/game/models/economy";
+import { MOVE_COST_RATIO } from "@/game/models/pricing";
 import { getLandValueTier } from "@/game/simulation/landValue";
 import { useGameStore } from "@/game/state/useGameStore";
 
@@ -67,6 +67,8 @@ export const TileInspectorModal = () => {
       )
   );
   const canMoveNow = Boolean(tile.constructed && tile.buildingId && canAffordMove);
+  const landValueGap = upgradeCriteria ? Math.max(0, upgradeCriteria.minLandValue - tile.landValue) : 0;
+  const happinessGap = upgradeCriteria ? Math.max(0, upgradeCriteria.minHappiness - tile.happiness) : 0;
 
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/70 p-4">
@@ -87,6 +89,7 @@ export const TileInspectorModal = () => {
             Coordinates: ({tile.x}, {tile.y})
           </p>
           <p>Building: {building ? `${building.emoji} ${building.name}` : "Empty"}</p>
+          <p>Landmark: {tile.landmark === "lake" ? "Lake (+land value nearby)" : "None"}</p>
           <p>Road: {roadLabel[tile.roadType]}</p>
           <p>Category: {building?.category ?? "N/A"}</p>
           <p>
@@ -135,6 +138,11 @@ export const TileInspectorModal = () => {
                   Upgrade Requirements: Land Value {upgradeCriteria.minLandValue}+ and Happiness{" "}
                   {upgradeCriteria.minHappiness}+
                 </p>
+                {!meetsUpgradeCriteria ? (
+                  <p className="text-amber-200">
+                    Needs +{landValueGap.toFixed(1)} land value and +{happinessGap.toFixed(1)} happiness
+                  </p>
+                ) : null}
                 <p>
                   Upgrade Cost:{" "}
                   {Object.entries(upgradeCost ?? {}).map(([resource, amount]) => (
