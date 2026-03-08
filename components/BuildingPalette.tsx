@@ -5,6 +5,8 @@ import { ROAD_COSTS } from "@/game/models/pricing";
 import { useGameStore } from "@/game/state/useGameStore";
 
 type BuildTab = "utility" | "residential" | "commercial" | "industry";
+const COMPARABLE_CATEGORIES = new Set(["residential", "commercial", "industrial"]);
+const formatSigned = (value: number): string => `${value >= 0 ? "+" : ""}${value}`;
 
 export const BuildingPalette = () => {
   const selectedBuildingId = useGameStore((state) => state.selectedBuildingId);
@@ -30,6 +32,18 @@ export const BuildingPalette = () => {
       }),
     [activeTab]
   );
+  const categoryBaseline = useMemo(() => {
+    const baseline = new Map<string, (typeof BUILDING_LIST)[number]>();
+    for (const building of BUILDING_LIST) {
+      const current = baseline.get(building.category);
+      const currentCoins = current?.cost.coins ?? Number.POSITIVE_INFINITY;
+      const nextCoins = building.cost.coins ?? Number.POSITIVE_INFINITY;
+      if (!current || nextCoins < currentCoins) {
+        baseline.set(building.category, building);
+      }
+    }
+    return baseline;
+  }, []);
 
   return (
     <section className="rounded-lg border border-slate-700 bg-slate-900 p-4">
@@ -109,6 +123,13 @@ export const BuildingPalette = () => {
           const affordable = Object.entries(building.cost).every(
             ([resource, amount]) => resources[resource as keyof typeof resources] >= (amount ?? 0)
           );
+          const outputPerCycle = `${building.production.amountPerCycle} ${building.production.resource} / ${building.production.cycleSeconds}s`;
+          const baseline =
+            COMPARABLE_CATEGORIES.has(building.category) ? categoryBaseline.get(building.category) : undefined;
+          const showComparison = Boolean(baseline && baseline.id !== building.id);
+          const populationDelta = (building.population ?? 0) - (baseline?.population ?? 0);
+          const jobsDelta = (building.jobs ?? 0) - (baseline?.jobs ?? 0);
+          const productionDelta = building.production.amountPerCycle - (baseline?.production.amountPerCycle ?? 0);
           return (
             <button
               key={building.id}
@@ -133,6 +154,15 @@ export const BuildingPalette = () => {
                   </span>
                 ))}
               </div>
+              <div className="mt-1 text-[11px] text-slate-300">
+                Impact: Pop {building.population ?? 0} | Jobs {building.jobs ?? 0} | Output {outputPerCycle}
+              </div>
+              {showComparison ? (
+                <div className="mt-1 text-[11px] text-sky-200">
+                  Vs {baseline?.name}: {formatSigned(populationDelta)} pop, {formatSigned(jobsDelta)} jobs,{" "}
+                  {formatSigned(productionDelta)} {building.production.resource}/cycle
+                </div>
+              ) : null}
             </button>
           );
         })}
