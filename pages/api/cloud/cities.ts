@@ -40,7 +40,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (req.method === "GET") {
     const { data, error } = await supabase
       .from("city_snapshots")
-      .select("city_id, city_name, is_primary, created_at, last_updated")
+      .select("city_id, city_name, is_primary, created_at, last_updated, metadata_json")
       .eq("user_id", userId)
       .is("deleted_at", null)
       .order("last_updated", { ascending: false });
@@ -57,7 +57,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         cityName: row.city_name,
         isPrimary: Boolean(row.is_primary),
         createdAt: row.created_at,
-        updatedAt: row.last_updated
+        updatedAt: row.last_updated,
+        metadataJson: row.metadata_json ?? {}
       }))
     });
     return;
@@ -106,21 +107,33 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (req.method === "PATCH") {
     const cityIdRaw = req.body?.cityId;
     const cityNameRaw = req.body?.cityName;
+    const metadataJsonRaw = req.body?.metadataJson as Record<string, unknown> | undefined;
     const cityId = typeof cityIdRaw === "string" ? cityIdRaw.trim() : "";
     const cityName = typeof cityNameRaw === "string" ? cityNameRaw.trim() : "";
-    if (!cityId || !cityName) {
-      res.status(400).json({ error: "cityId and cityName are required." });
+    const metadataJsonProvided = metadataJsonRaw !== undefined;
+    if (!cityId || (!cityName && !metadataJsonProvided)) {
+      res.status(400).json({ error: "cityId plus cityName or metadataJson is required." });
       return;
+    }
+    if (metadataJsonProvided && (!metadataJsonRaw || Array.isArray(metadataJsonRaw))) {
+      res.status(400).json({ error: "metadataJson must be an object." });
+      return;
+    }
+
+    const updatePayload: Record<string, unknown> = {
+      last_updated: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+    if (cityName) {
+      updatePayload.city_name = cityName;
+    }
+    if (metadataJsonProvided) {
+      updatePayload.metadata_json = metadataJsonRaw;
     }
 
     const { error } = await supabase
       .from("city_snapshots")
-      .update({
-        city_name: cityName,
-        last_played_at: new Date().toISOString(),
-        last_updated: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      })
+      .update(updatePayload)
       .eq("user_id", userId)
       .eq("city_id", cityId)
       .is("deleted_at", null);
@@ -131,7 +144,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return;
     }
 
-    res.status(200).json({ ok: true, cityId, cityName });
+    res.status(200).json({ ok: true, cityId, cityName: cityName || null, metadataUpdated: metadataJsonProvided });
     return;
   }
 

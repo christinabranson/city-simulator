@@ -229,6 +229,44 @@ const getConstructedCompletions = (previousTiles: Tile[], nextTiles: Tile[]): Ti
   });
 };
 
+const getOfflineProgressToast = (
+  previous: GameStateSnapshot,
+  next: GameStateSnapshot,
+  completedConstructionCount: number
+): { type: ToastType; message: string } | null => {
+  const elapsedMs = Math.max(0, next.lastSimulatedAt - previous.lastSimulatedAt);
+  if (elapsedMs < 5000) {
+    return null;
+  }
+  const resourceOrder: ResourceType[] = ["coins", "energy", "water"];
+  const gains = resourceOrder
+    .map((resource) => ({
+      resource,
+      delta: (next.resources[resource] ?? 0) - (previous.resources[resource] ?? 0)
+    }))
+    .filter((entry) => entry.delta > 0);
+  if (gains.length === 0) {
+    if (completedConstructionCount <= 0) {
+      return null;
+    }
+    return {
+      type: "info",
+      message: `Offline progress applied: ${completedConstructionCount} construction${
+        completedConstructionCount === 1 ? "" : "s"
+      } completed.`
+    };
+  }
+  const summary = gains.map((entry) => `+${entry.delta} ${entry.resource}`).join(", ");
+  return {
+    type: "info",
+    message: `Offline progress applied: ${summary}${
+      completedConstructionCount > 0
+        ? `, ${completedConstructionCount} construction${completedConstructionCount === 1 ? "" : "s"} completed`
+        : ""
+    }.`
+  };
+};
+
 interface PlannedExpansionTile {
   x: number;
   y: number;
@@ -350,8 +388,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
       ...simulated,
       hydrated: true
     });
-    const completedTiles = getConstructedCompletions(base.tiles, simulated.tiles).slice(0, 3);
-    for (const tile of completedTiles) {
+    const completedTiles = getConstructedCompletions(base.tiles, simulated.tiles);
+    const offlineProgressToast = getOfflineProgressToast(base, simulated, completedTiles.length);
+    if (offlineProgressToast) {
+      get().pushToast(offlineProgressToast.type, offlineProgressToast.message, 4200);
+    }
+    for (const tile of completedTiles.slice(0, 3)) {
       const buildingName = tile.buildingId ? BUILDINGS[tile.buildingId].name : "Building";
       get().pushToast("success", `${buildingName} construction complete.`);
     }
@@ -365,6 +407,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
       ...simulated,
       hydrated: true
     });
+    const completedTiles = getConstructedCompletions(normalized.tiles, simulated.tiles);
+    const offlineProgressToast = getOfflineProgressToast(normalized, simulated, completedTiles.length);
+    if (offlineProgressToast) {
+      get().pushToast(offlineProgressToast.type, offlineProgressToast.message, 4200);
+    }
+    for (const tile of completedTiles.slice(0, 3)) {
+      const buildingName = tile.buildingId ? BUILDINGS[tile.buildingId].name : "Building";
+      get().pushToast("success", `${buildingName} construction complete.`);
+    }
   },
 
   selectBuilding: (buildingId) => {

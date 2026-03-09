@@ -10,6 +10,7 @@ interface CloudCity {
   isPrimary?: boolean;
   createdAt?: string;
   updatedAt: string;
+  metadataJson?: Record<string, unknown>;
 }
 
 const DEFAULT_CITY_ID = "primary";
@@ -40,6 +41,10 @@ export const CloudSyncBridge = () => {
   const [cities, setCities] = useState<CloudCity[]>([]);
   const [activeCityId, setActiveCityId] = useState(DEFAULT_CITY_ID);
   const [transferToCityId, setTransferToCityId] = useState("");
+  const [renamingCity, setRenamingCity] = useState(false);
+  const [renameDraft, setRenameDraft] = useState("");
+  const [metadataDraft, setMetadataDraft] = useState("{}");
+  const [isSavingMetadata, setIsSavingMetadata] = useState(false);
   const [readyToSync, setReadyToSync] = useState(false);
   const [cloudWriteEnabled, setCloudWriteEnabled] = useState(true);
   const [loadingCity, setLoadingCity] = useState(false);
@@ -134,9 +139,17 @@ export const CloudSyncBridge = () => {
 
   const renameCity = useCallback(async () => {
     const current = cities.find((city) => city.cityId === activeCityId);
-    const fallbackName = current?.cityName ?? DEFAULT_CITY_NAME;
-    const cityName = window.prompt("Rename city:", fallbackName);
+    const cityName = renameDraft.trim();
     if (!cityName) {
+      pushToast("warning", "City name cannot be empty.");
+      return;
+    }
+    if (!current) {
+      pushToast("warning", "Select a city first.");
+      return;
+    }
+    if (cityName === current.cityName) {
+      setRenamingCity(false);
       return;
     }
     const response = await fetch("/api/cloud/cities", {
@@ -150,8 +163,50 @@ export const CloudSyncBridge = () => {
     }
     const updated = await listCities();
     setCities(updated);
+    setRenamingCity(false);
     pushToast("success", "City renamed.");
-  }, [activeCityId, cities, listCities, pushToast]);
+  }, [activeCityId, cities, listCities, pushToast, renameDraft]);
+
+  const saveMetadata = useCallback(async () => {
+    const current = cities.find((city) => city.cityId === activeCityId);
+    if (!current) {
+      pushToast("warning", "Select a city first.");
+      return;
+    }
+    let parsed: Record<string, unknown>;
+    try {
+      const json = JSON.parse(metadataDraft) as unknown;
+      if (!json || Array.isArray(json) || typeof json !== "object") {
+        pushToast("warning", "Metadata JSON must be an object.");
+        return;
+      }
+      parsed = json as Record<string, unknown>;
+    } catch {
+      pushToast("warning", "Metadata JSON is invalid.");
+      return;
+    }
+
+    setIsSavingMetadata(true);
+    try {
+      const response = await fetch("/api/cloud/cities", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          cityId: activeCityId,
+          metadataJson: parsed
+        })
+      });
+      if (!response.ok) {
+        pushToast("error", "Could not save city metadata.");
+        return;
+      }
+      const updated = await listCities();
+      setCities(updated);
+      pushToast("success", "City metadata saved.");
+    } finally {
+      setIsSavingMetadata(false);
+    }
+  }, [activeCityId, cities, listCities, metadataDraft, pushToast]);
 
   const deleteCity = useCallback(async () => {
     if (cities.length <= 1) {
@@ -227,6 +282,19 @@ export const CloudSyncBridge = () => {
       setTransferToCityId("");
     }
   }, [activeCityId, cities, transferToCityId]);
+
+  useEffect(() => {
+    const activeCity = cities.find((city) => city.cityId === activeCityId);
+    if (!activeCity) {
+      setMetadataDraft("{}");
+      setRenameDraft("");
+      return;
+    }
+    setMetadataDraft(JSON.stringify(activeCity.metadataJson ?? {}, null, 2));
+    if (!renamingCity) {
+      setRenameDraft(activeCity.cityName);
+    }
+  }, [activeCityId, cities, renamingCity]);
 
   useEffect(() => {
     if (!isLoaded || !isSignedIn || !hydrated || readyToSync || cloudBootstrapStarted.current || !user?.id) {
@@ -320,71 +388,130 @@ export const CloudSyncBridge = () => {
     return null;
   }
 
+  const activeCity = cities.find((city) => city.cityId === activeCityId);
+
   return (
-    <div className="mb-3 flex flex-wrap items-center gap-2 rounded border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-slate-200">
-      <span className="font-medium text-slate-100">City</span>
-      <select
-        value={activeCityId}
-        disabled={loadingCity}
-        onChange={(event) => {
-          void loadCity(event.target.value);
-        }}
-        className="rounded border border-slate-700 bg-slate-800 px-2 py-1 text-slate-100"
-      >
-        {cities.map((city) => (
-          <option key={city.cityId} value={city.cityId}>
-            {city.isPrimary ? "★ " : ""}
-            {city.cityName}
-          </option>
-        ))}
-      </select>
-      <button
-        type="button"
-        onClick={() => {
-          void createCity();
-        }}
-        className="rounded bg-emerald-700 px-2 py-1 text-emerald-50 hover:bg-emerald-600"
-      >
-        New
-      </button>
-      <button
-        type="button"
-        onClick={() => {
-          void renameCity();
-        }}
-        disabled={!activeCityId}
-        className="rounded bg-slate-700 px-2 py-1 text-slate-100 hover:bg-slate-600 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
-      >
-        Rename
-      </button>
-      <select
-        value={transferToCityId}
-        disabled={cities.length <= 1}
-        onChange={(event) => setTransferToCityId(event.target.value)}
-        className="rounded border border-slate-700 bg-slate-800 px-2 py-1 text-slate-100 disabled:cursor-not-allowed disabled:text-slate-500"
-      >
-        <option value="">No transfer</option>
-        {cities
-          .filter((city) => city.cityId !== activeCityId)
-          .map((city) => (
+    <div className="mb-3 space-y-2 rounded border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-slate-200">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-medium text-slate-100">City</span>
+        <select
+          value={activeCityId}
+          disabled={loadingCity}
+          onChange={(event) => {
+            void loadCity(event.target.value);
+          }}
+          className="rounded border border-slate-700 bg-slate-800 px-2 py-1 text-slate-100"
+        >
+          {cities.map((city) => (
             <option key={city.cityId} value={city.cityId}>
-              Transfer to: {city.cityName}
+              {city.isPrimary ? "★ " : ""}
+              {city.cityName}
             </option>
           ))}
-      </select>
-      <button
-        type="button"
-        onClick={() => {
-          void deleteCity();
-        }}
-        disabled={cities.length <= 1 || !activeCityId}
-        className="rounded bg-rose-700 px-2 py-1 text-rose-50 hover:bg-rose-600 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
-      >
-        Delete
-      </button>
-      <span className="text-slate-400">
-        {loadingCity ? "Loading city..." : readyToSync ? "Synced" : "Preparing cloud sync..."}
-      </span>
+        </select>
+        <button
+          type="button"
+          onClick={() => {
+            void createCity();
+          }}
+          className="rounded bg-emerald-700 px-2 py-1 text-emerald-50 hover:bg-emerald-600"
+        >
+          New
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            if (!renamingCity) {
+              const current = cities.find((city) => city.cityId === activeCityId);
+              setRenameDraft(current?.cityName ?? "");
+              setRenamingCity(true);
+              return;
+            }
+            void renameCity();
+          }}
+          disabled={!activeCityId}
+          className="rounded bg-slate-700 px-2 py-1 text-slate-100 hover:bg-slate-600 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
+        >
+          {renamingCity ? "Save name" : "Rename"}
+        </button>
+        {renamingCity ? (
+          <>
+            <input
+              type="text"
+              value={renameDraft}
+              onChange={(event) => setRenameDraft(event.target.value)}
+              placeholder="City name"
+              className="rounded border border-slate-700 bg-slate-800 px-2 py-1 text-slate-100"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                setRenamingCity(false);
+                const current = cities.find((city) => city.cityId === activeCityId);
+                setRenameDraft(current?.cityName ?? "");
+              }}
+              className="rounded bg-slate-800 px-2 py-1 text-slate-200 hover:bg-slate-700"
+            >
+              Cancel
+            </button>
+          </>
+        ) : null}
+        <select
+          value={transferToCityId}
+          disabled={cities.length <= 1}
+          onChange={(event) => setTransferToCityId(event.target.value)}
+          className="rounded border border-slate-700 bg-slate-800 px-2 py-1 text-slate-100 disabled:cursor-not-allowed disabled:text-slate-500"
+        >
+          <option value="">No transfer</option>
+          {cities
+            .filter((city) => city.cityId !== activeCityId)
+            .map((city) => (
+              <option key={city.cityId} value={city.cityId}>
+                Transfer to: {city.cityName}
+              </option>
+            ))}
+        </select>
+        <button
+          type="button"
+          onClick={() => {
+            void deleteCity();
+          }}
+          disabled={cities.length <= 1 || !activeCityId}
+          className="rounded bg-rose-700 px-2 py-1 text-rose-50 hover:bg-rose-600 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
+        >
+          Delete
+        </button>
+        <span className="text-slate-400">
+          {loadingCity ? "Loading city..." : readyToSync ? "Synced" : "Preparing cloud sync..."}
+        </span>
+      </div>
+
+      <div className="rounded border border-slate-700 bg-slate-950/40 p-2">
+        <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+          <span className="font-medium text-slate-100">Metadata Debug</span>
+          <span className="text-slate-400">
+            {activeCity ? `Created ${activeCity.createdAt ?? "n/a"} | Updated ${activeCity.updatedAt}` : "No city"}
+          </span>
+        </div>
+        <textarea
+          value={metadataDraft}
+          onChange={(event) => setMetadataDraft(event.target.value)}
+          rows={6}
+          className="w-full rounded border border-slate-700 bg-slate-900 p-2 font-mono text-[11px] text-slate-100"
+        />
+        <div className="mt-2 flex justify-end">
+          <button
+            type="button"
+            onClick={() => {
+              void saveMetadata();
+            }}
+            disabled={isSavingMetadata || !activeCityId}
+            className="rounded bg-indigo-700 px-2 py-1 text-indigo-50 hover:bg-indigo-600 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
+          >
+            {isSavingMetadata ? "Saving..." : "Save metadata"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 };
