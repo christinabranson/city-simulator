@@ -25,7 +25,7 @@ export default function Home() {
         <meta name="description" content="Mechanics-first city simulation prototype" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
       </Head>
-      <main className="mx-auto min-h-full max-w-7xl p-4">
+      <main className="mx-auto min-h-full max-w-7xl bg-gradient-to-b from-indigo-950/35 via-blue-950/30 to-slate-950/40 p-4">
         <div className="mb-4 flex items-center justify-between gap-2">
           <h1 className="text-2xl font-bold">City Builder Prototype</h1>
           <div className="flex items-center gap-2">

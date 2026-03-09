@@ -27,6 +27,39 @@ type OverlayMode =
   | "serviceRecreation"
   | "serviceCombined";
 
+const districtTintClass = (category?: string): string => {
+  if (category === "residential") {
+    return "bg-emerald-400/10";
+  }
+  if (category === "commercial") {
+    return "bg-sky-400/10";
+  }
+  if (category === "industrial") {
+    return "bg-orange-400/10";
+  }
+  if (category === "civic") {
+    return "bg-cyan-400/8";
+  }
+  if (category === "recreation") {
+    return "bg-lime-400/10";
+  }
+  return "";
+};
+
+const starLevel = (landValue: number, happiness: number): number => {
+  const score = landValue * 0.65 + happiness * 0.35;
+  if (score >= 82) {
+    return 3;
+  }
+  if (score >= 66) {
+    return 2;
+  }
+  if (score >= 52) {
+    return 1;
+  }
+  return 0;
+};
+
 export const CityGrid = () => {
   const tiles = useGameStore((state) => state.tiles);
   const width = useGameStore((state) => state.gridWidth);
@@ -42,6 +75,7 @@ export const CityGrid = () => {
   const inspectTile = useGameStore((state) => state.inspectTile);
   const [overlayMode, setOverlayMode] = useState<OverlayMode>("none");
   const [placementHint, setPlacementHint] = useState<string | null>(null);
+  const [animationNow, setAnimationNow] = useState(() => Date.now());
 
   const existingTileMap = useMemo(
     () => new Map(tiles.map((tile) => [`${tile.x},${tile.y}`, tile])),
@@ -92,6 +126,15 @@ export const CityGrid = () => {
   );
 
   useEffect(() => {
+    const interval = window.setInterval(() => {
+      setAnimationNow(Date.now());
+    }, 700);
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, []);
+
+  useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       const target = event.target as HTMLElement | null;
       const tag = target?.tagName?.toLowerCase();
@@ -120,20 +163,13 @@ export const CityGrid = () => {
         if (key === "h") {
           return previous === "happiness" ? "none" : "happiness";
         }
-        if (
-          previous !== "serviceEducation" &&
-          previous !== "serviceRecreation" &&
-          previous !== "serviceCombined"
-        ) {
-          return "serviceEducation";
-        }
-        if (previous === "serviceEducation") {
-          return "serviceRecreation";
-        }
-        if (previous === "serviceRecreation") {
-          return "serviceCombined";
-        }
-        return "none";
+        return previous === "serviceEducation"
+          ? "serviceRecreation"
+          : previous === "serviceRecreation"
+            ? "serviceCombined"
+            : previous === "serviceCombined"
+              ? "none"
+              : "serviceEducation";
       });
     };
 
@@ -259,6 +295,25 @@ export const CityGrid = () => {
     return null;
   };
 
+  const cycleServiceOverlay = (): void => {
+    setOverlayMode((previous) => {
+      if (
+        previous !== "serviceEducation" &&
+        previous !== "serviceRecreation" &&
+        previous !== "serviceCombined"
+      ) {
+        return "serviceEducation";
+      }
+      if (previous === "serviceEducation") {
+        return "serviceRecreation";
+      }
+      if (previous === "serviceRecreation") {
+        return "serviceCombined";
+      }
+      return "none";
+    });
+  };
+
   const onTileClick = (x: number, y: number, isPlanned = false): void => {
     if (isPlanned) {
       setPlacementHint("Surveyed tile. Buy land to unlock this area.");
@@ -289,6 +344,22 @@ export const CityGrid = () => {
     inspectTile(x, y);
   };
 
+  const tileTooltip = (tile: (typeof tiles)[number]): string => {
+    if (tile.buildingId) {
+      const building = BUILDINGS[tile.buildingId];
+      return `${building.name}\nPopulation: ${building.population ?? 0}\nJobs: ${building.jobs ?? 0}\nHappiness: ${Math.round(
+        tile.happiness
+      )}\nLand value: ${Math.round(tile.landValue)}\nPollution: ${Math.round(tile.pollution)}`;
+    }
+    if (tile.landmark === "lake") {
+      return "Lake landmark\nBoosts nearby land value";
+    }
+    if (tile.roadType !== "none") {
+      return `${tile.roadType} road`;
+    }
+    return `Empty land\nHappiness: ${Math.round(tile.happiness)}\nLand value: ${Math.round(tile.landValue)}`;
+  };
+
   return (
     <section className="rounded-lg border border-slate-700 bg-slate-900 p-4">
       <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-300">City Grid</h2>
@@ -313,6 +384,41 @@ export const CityGrid = () => {
                     ? "Service: Recreation"
                     : "Service: Combined"}
       </p>
+      <div className="mb-3 flex flex-wrap gap-2">
+        {[
+          { id: "landValue", icon: "🌍", label: "Land" },
+          { id: "pollution", icon: "☣", label: "Pollution" },
+          { id: "happiness", icon: "😊", label: "Happiness" }
+        ].map((overlay) => (
+          <button
+            key={overlay.id}
+            type="button"
+            onClick={() =>
+              setOverlayMode((previous) =>
+                previous === (overlay.id as OverlayMode) ? "none" : (overlay.id as OverlayMode)
+              )
+            }
+            className={`rounded border px-2 py-1 text-xs ${
+              overlayMode === overlay.id
+                ? "border-sky-500 bg-sky-900/30 text-sky-100"
+                : "border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700"
+            }`}
+          >
+            {overlay.icon} {overlay.label}
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={cycleServiceOverlay}
+          className={`rounded border px-2 py-1 text-xs ${
+            overlayMode === "serviceEducation" || overlayMode === "serviceRecreation" || overlayMode === "serviceCombined"
+              ? "border-sky-500 bg-sky-900/30 text-sky-100"
+              : "border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700"
+          }`}
+        >
+          🏫 Services
+        </button>
+      </div>
       <div className="mb-3 flex flex-wrap items-center gap-3 rounded bg-slate-800 px-2 py-1 text-[11px] text-slate-300">
         <span className="font-medium text-slate-200">Legend:</span>
         <span className="inline-flex items-center gap-1">
@@ -345,6 +451,19 @@ export const CityGrid = () => {
           const buildPreview = getBuildPreview(tile);
           const serviceOverlay = getServiceOverlayOpacity(tile);
           const singleOverlay = getSingleOverlayStyle(tile);
+          const highValueGlowClass =
+            tile.landValue >= 78
+              ? "shadow-[0_0_10px_rgba(250,204,21,0.55)]"
+              : tile.landValue >= 62
+                ? "shadow-[0_0_7px_rgba(74,222,128,0.35)]"
+                : "";
+          const districtTint = tile.buildingId ? districtTintClass(BUILDINGS[tile.buildingId].category) : "";
+          const isRecentlyCompleted = Boolean(
+            tile.constructed &&
+              tile.constructionCompleteAt &&
+              animationNow - tile.constructionCompleteAt > 0 &&
+              animationNow - tile.constructionCompleteAt < 2500
+          );
           if (isPlanned) {
             return (
               <button
@@ -369,9 +488,10 @@ export const CityGrid = () => {
                   key={`${tile.x}-${tile.y}`}
                   type="button"
                   onClick={() => onTileClick(tile.x, tile.y)}
+                  title={tileTooltip(tile)}
                   className={`relative aspect-square rounded border border-slate-700 text-xs text-slate-100 ${
                     buildPreview ? (buildPreview.canPlace ? "cursor-copy" : "cursor-not-allowed") : ""
-                  } ${style.className}`}
+                  } ${style.className} ${highValueGlowClass} transition-transform duration-150 hover:scale-[1.03] hover:ring-1 hover:ring-slate-300/40`}
                 >
                   <span
                     className="pointer-events-none absolute inset-0 rounded"
@@ -409,6 +529,7 @@ export const CityGrid = () => {
                       }`}
                     />
                   ) : null}
+                  {districtTint ? <span className={`pointer-events-none absolute inset-0 rounded ${districtTint}`} /> : null}
                   <span className="relative z-10 text-base">{style.icon}</span>
                 </button>
               );
@@ -419,7 +540,8 @@ export const CityGrid = () => {
                   key={`${tile.x}-${tile.y}`}
                   type="button"
                   onClick={() => onTileClick(tile.x, tile.y)}
-                  className="relative aspect-square cursor-not-allowed rounded border border-cyan-700 bg-cyan-700/60 text-xs text-cyan-100"
+                  title={tileTooltip(tile)}
+                  className={`relative aspect-square cursor-not-allowed rounded border border-cyan-700 bg-cyan-700/60 text-xs text-cyan-100 ${highValueGlowClass} transition-transform duration-150 hover:scale-[1.03]`}
                 >
                   <span className="relative z-10 text-base">🌊</span>
                 </button>
@@ -430,9 +552,10 @@ export const CityGrid = () => {
                 key={`${tile.x}-${tile.y}`}
                 type="button"
                 onClick={() => onTileClick(tile.x, tile.y)}
+                title={tileTooltip(tile)}
                 className={`relative aspect-square rounded border border-slate-700 bg-slate-800 text-xs text-slate-300 hover:bg-slate-700 ${
                   buildPreview ? (buildPreview.canPlace ? "cursor-copy" : "cursor-not-allowed") : ""
-                }`}
+                } ${highValueGlowClass} transition-transform duration-150 hover:scale-[1.03] hover:ring-1 hover:ring-slate-300/40`}
               >
                 <span
                   className="pointer-events-none absolute inset-0 rounded"
@@ -470,6 +593,7 @@ export const CityGrid = () => {
                     }`}
                   />
                 ) : null}
+                {districtTint ? <span className={`pointer-events-none absolute inset-0 rounded ${districtTint}`} /> : null}
                 <span
                   className="pointer-events-none absolute inset-0 rounded bg-red-500"
                   style={{ opacity: Math.min(tile.pollution / 120, 0.5) }}
@@ -478,20 +602,22 @@ export const CityGrid = () => {
                   className="pointer-events-none absolute inset-0 rounded bg-green-400"
                   style={{ opacity: tile.landValue > 50 ? Math.min((tile.landValue - 50) / 100, 0.3) : 0 }}
                 />
-                +
+                ·
               </button>
             );
           }
 
           const building = BUILDINGS[tile.buildingId];
+          const stars = starLevel(tile.landValue, tile.happiness);
           return (
             <button
               key={`${tile.x}-${tile.y}`}
               type="button"
-                onClick={() => onTileClick(tile.x, tile.y)}
-                className={`relative aspect-square rounded border border-slate-700 text-center text-xs ${
-                  buildPreview ? "cursor-not-allowed" : ""
-                } ${building.colorClass}`}
+              onClick={() => onTileClick(tile.x, tile.y)}
+              title={tileTooltip(tile)}
+              className={`relative aspect-square rounded border border-slate-700 text-center text-xs transition-transform duration-150 hover:scale-[1.03] hover:ring-1 hover:ring-slate-300/40 ${
+                buildPreview ? "cursor-not-allowed" : ""
+              } ${building.colorClass} ${highValueGlowClass}`}
             >
                 <span
                   className="pointer-events-none absolute inset-0 rounded"
@@ -525,6 +651,7 @@ export const CityGrid = () => {
                 {buildPreview ? (
                   <span className="pointer-events-none absolute inset-0 rounded bg-rose-500/55" />
                 ) : null}
+                {districtTint ? <span className={`pointer-events-none absolute inset-0 rounded ${districtTint}`} /> : null}
                 <span
                   className="pointer-events-none absolute inset-0 rounded bg-red-500"
                   style={{ opacity: Math.min(tile.pollution / 120, 0.45) }}
@@ -534,6 +661,17 @@ export const CityGrid = () => {
                   style={{ opacity: tile.landValue > 50 ? Math.min((tile.landValue - 50) / 100, 0.25) : 0 }}
                 />
                 <div className="relative z-10">
+                  {isRecentlyCompleted ? (
+                    <>
+                      <span className="pointer-events-none absolute inset-0 rounded bg-white/20 animate-pulse" />
+                      <span className="pointer-events-none absolute -top-1 left-1 text-sm">✨</span>
+                    </>
+                  ) : null}
+                  {stars > 0 ? (
+                    <div className="absolute -top-2 right-0 text-[10px] text-yellow-300">
+                      {"⭐".repeat(stars)}
+                    </div>
+                  ) : null}
                   {tile.constructed && !tile.isActive ? (
                     <div className="absolute -top-2 right-0 text-sm" title={tile.inactiveReason ?? "Inactive"}>
                       ⚠️

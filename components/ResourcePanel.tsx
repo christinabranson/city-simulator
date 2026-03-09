@@ -35,6 +35,12 @@ const resourceLabel: Record<ResourceType, string> = {
   water: "Water"
 };
 
+const resourceIcon: Record<ResourceType, string> = {
+  coins: "🪙",
+  energy: "⚡",
+  water: "💧"
+};
+
 export const ResourcePanel = () => {
   const resources = useGameStore((state) => state.resources);
   const tiles = useGameStore((state) => state.tiles);
@@ -133,9 +139,13 @@ export const ResourcePanel = () => {
         {(["coins", "energy", "water"] as const).map((resource) => (
           <div key={resource} className="rounded bg-slate-800 p-2">
             <div className="font-medium">
-              {resourceLabel[resource]}: {resources[resource]}
+              {resourceIcon[resource]} {resourceLabel[resource]}: {resources[resource]}
             </div>
-            <div className="mt-1 text-xs text-slate-300">
+            <div
+              className={`mt-1 text-xs ${
+                cycleStats[resource].totalPerCycle > 0 ? "text-emerald-300" : "text-slate-300"
+              }`}
+            >
               +{cycleStats[resource].totalPerCycle} per cycle
             </div>
             <div className="text-xs text-slate-300">

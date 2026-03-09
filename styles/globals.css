@@ -9,5 +9,6 @@ body,
 }
 
 body {
-  @apply bg-slate-950 text-slate-100;
+  @apply text-slate-100;
+  background: linear-gradient(180deg, #0f172a 0%, #172554 45%, #020617 100%);
 }
